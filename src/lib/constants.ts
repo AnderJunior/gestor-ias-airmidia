@@ -2,6 +2,7 @@ export const ROUTES = {
   LOGIN: '/login',
   DASHBOARD: '/dashboard',
   ATENDIMENTO: '/atendimento',
+  CONFIGURACOES: '/configuracoes',
 } as const;
 
 export const STATUS_OPTIONS = [

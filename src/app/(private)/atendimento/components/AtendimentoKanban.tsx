@@ -1,78 +1,116 @@
 'use client';
 
-import { useState } from 'react';
-import { Atendimento } from '@/types/domain';
+import { useState, useMemo } from 'react';
+import { Atendimento, Agendamento } from '@/types/domain';
 import { formatTimeAgo } from '@/lib/utils/dates';
 import { updateAtendimentoStatus } from '@/lib/api/atendimentos';
+import { updateAgendamentoStatus } from '@/lib/api/agendamentos';
 import { Phone, MoreVertical } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 
 interface AtendimentoKanbanProps {
-  atendimentos: Atendimento[];
+  atendimentos?: Atendimento[];
+  agendamentos?: Agendamento[];
   loading: boolean;
   onSelectAtendimento: (id: string) => void;
   onStatusUpdate?: () => void;
+  tipoMarcacao?: 'atendimento' | 'agendamento';
 }
 
-type KanbanStatus = 'em_andamento' | 'encerrado';
+type KanbanStatusAtendimento = 'em_andamento' | 'encerrado';
+type KanbanStatusAgendamento = 'agendado' | 'concluido' | 'cancelado';
+type KanbanStatus = KanbanStatusAtendimento | KanbanStatusAgendamento;
 
 interface KanbanColumn {
   id: KanbanStatus;
   title: string;
   topBorderColor: string;
+  borderColor: string;
 }
 
-const columns: KanbanColumn[] = [
-  { id: 'em_andamento', title: 'Em andamento', topBorderColor: 'border-blue-500' },
-  { id: 'encerrado', title: 'Finalizado', topBorderColor: 'border-gray-400' },
+const columnsAtendimento: KanbanColumn[] = [
+  { id: 'em_andamento', title: 'Em andamento', topBorderColor: 'border-blue-500', borderColor: '#3b82f6' },
+  { id: 'encerrado', title: 'Finalizado', topBorderColor: 'border-gray-400', borderColor: '#9ca3af' },
+];
+
+const columnsAgendamento: KanbanColumn[] = [
+  { id: 'agendado', title: 'Agendado', topBorderColor: 'border-blue-500', borderColor: '#3b82f6' },
+  { id: 'concluido', title: 'Realizado', topBorderColor: 'border-green-500', borderColor: '#10b981' },
+  { id: 'cancelado', title: 'Cancelado', topBorderColor: 'border-red-500', borderColor: '#ef4444' },
 ];
 
 export function AtendimentoKanban({
-  atendimentos,
+  atendimentos = [],
+  agendamentos = [],
   loading,
   onSelectAtendimento,
   onStatusUpdate,
+  tipoMarcacao = 'atendimento',
 }: AtendimentoKanbanProps) {
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
-  const [draggedItemStatus, setDraggedItemStatus] = useState<KanbanStatus | 'aberto' | null>(null);
+  const [draggedItemStatus, setDraggedItemStatus] = useState<KanbanStatus | 'aberto' | 'confirmado' | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<KanbanStatus | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<{ id: string; status: KanbanStatus } | null>(null);
 
-  // Agrupar atendimentos por status
-  const atendimentosPorStatus = {
-    em_andamento: atendimentos.filter((a) => a.status === 'em_andamento'),
-    encerrado: atendimentos.filter((a) => a.status === 'encerrado'),
-  };
+  const isAgendamento = tipoMarcacao === 'agendamento';
+  const columns = isAgendamento ? columnsAgendamento : columnsAtendimento;
 
-  // Atendimentos sem status definido (aberto) vão para "em_andamento" por padrão
-  const atendimentosAbertos = atendimentos.filter((a) => a.status === 'aberto' || !a.status);
-  atendimentosPorStatus.em_andamento = [
-    ...atendimentosPorStatus.em_andamento,
-    ...atendimentosAbertos,
-  ];
+  // Agrupar dados por status baseado no tipo
+  const dadosPorStatus = useMemo(() => {
+    if (isAgendamento) {
+      return {
+        agendado: agendamentos.filter((a) => a.status === 'agendado' || a.status === 'confirmado'),
+        concluido: agendamentos.filter((a) => a.status === 'concluido'),
+        cancelado: agendamentos.filter((a) => a.status === 'cancelado'),
+      };
+    } else {
+      const atendimentosPorStatus = {
+        em_andamento: atendimentos.filter((a) => a.status === 'em_andamento'),
+        encerrado: atendimentos.filter((a) => a.status === 'encerrado'),
+      };
+      // Atendimentos sem status definido (aberto) vão para "em_andamento" por padrão
+      const atendimentosAbertos = atendimentos.filter((a) => a.status === 'aberto' || !a.status);
+      atendimentosPorStatus.em_andamento = [
+        ...atendimentosPorStatus.em_andamento,
+        ...atendimentosAbertos,
+      ];
+      return atendimentosPorStatus;
+    }
+  }, [atendimentos, agendamentos, isAgendamento]);
 
-  const handleDragStart = (e: React.DragEvent, atendimentoId: string, currentStatus: string) => {
-    setDraggedItem(atendimentoId);
-    setDraggedItemStatus(currentStatus as KanbanStatus | 'aberto');
+  const handleDragStart = (e: React.DragEvent, itemId: string, currentStatus: string) => {
+    setDraggedItem(itemId);
+    setDraggedItemStatus(currentStatus as KanbanStatus | 'aberto' | 'confirmado');
     e.dataTransfer.effectAllowed = 'move';
   };
 
   const handleDragOver = (e: React.DragEvent, targetStatus: KanbanStatus) => {
     e.preventDefault();
     
-    // Permitir drop apenas se estiver movendo de "em_andamento" para "encerrado"
-    // ou se o status atual for "aberto" (pode ir para qualquer coluna)
-    const canDrop = draggedItemStatus === 'em_andamento' || draggedItemStatus === 'aberto';
-    
-    if (canDrop) {
-      e.dataTransfer.dropEffect = 'move';
-      setDragOverColumn(targetStatus);
+    if (isAgendamento) {
+      // Para agendamentos: pode mover de "agendado" ou "confirmado" para qualquer coluna
+      const canDrop = draggedItemStatus === 'agendado' || draggedItemStatus === 'confirmado';
+      if (canDrop) {
+        e.dataTransfer.dropEffect = 'move';
+        setDragOverColumn(targetStatus);
+      } else {
+        e.dataTransfer.dropEffect = 'none';
+        setDragOverColumn(null);
+      }
     } else {
-      e.dataTransfer.dropEffect = 'none';
-      setDragOverColumn(null);
+      // Para atendimentos: permitir drop apenas se estiver movendo de "em_andamento" para "encerrado"
+      // ou se o status atual for "aberto" (pode ir para qualquer coluna)
+      const canDrop = draggedItemStatus === 'em_andamento' || draggedItemStatus === 'aberto';
+      if (canDrop) {
+        e.dataTransfer.dropEffect = 'move';
+        setDragOverColumn(targetStatus);
+      } else {
+        e.dataTransfer.dropEffect = 'none';
+        setDragOverColumn(null);
+      }
     }
   };
 
@@ -86,45 +124,86 @@ export function AtendimentoKanban({
     
     if (!draggedItem) return;
 
-    // Validar se pode mover para o status de destino
-    // Permitir mover de "em_andamento" ou "aberto" para "encerrado"
-    if (draggedItemStatus !== 'em_andamento' && draggedItemStatus !== 'aberto') {
-      setDraggedItem(null);
-      setDraggedItemStatus(null);
-      return;
-    }
-
-    // Não fazer nada se já estiver no status de destino
-    const atendimento = atendimentos.find(a => a.id === draggedItem);
-    if (atendimento && atendimento.status === targetStatus) {
-      setDraggedItem(null);
-      setDraggedItemStatus(null);
-      return;
-    }
-
-    // Se estiver movendo para "encerrado", mostrar modal de confirmação
-    if (targetStatus === 'encerrado') {
-      setPendingUpdate({ id: draggedItem, status: targetStatus });
-      setShowConfirmModal(true);
-      setDraggedItem(null);
-      setDraggedItemStatus(null);
-      return;
-    }
-
-    // Para outros status, atualizar diretamente
-    setUpdating(draggedItem);
-    try {
-      await updateAtendimentoStatus(draggedItem, targetStatus);
-      if (onStatusUpdate) {
-        onStatusUpdate();
+    if (isAgendamento) {
+      // Validar se pode mover para o status de destino (agendamentos)
+      if (draggedItemStatus !== 'agendado' && draggedItemStatus !== 'confirmado') {
+        setDraggedItem(null);
+        setDraggedItemStatus(null);
+        return;
       }
-    } catch (error) {
-      console.error('Erro ao atualizar status:', error);
-      alert('Erro ao atualizar status do atendimento. Tente novamente.');
-    } finally {
-      setUpdating(null);
-      setDraggedItem(null);
-      setDraggedItemStatus(null);
+
+      // Não fazer nada se já estiver no status de destino
+      const agendamento = agendamentos.find(a => a.id === draggedItem);
+      if (agendamento) {
+        // Se o destino for "agendado", verificar se já está em "agendado" ou "confirmado"
+        if (targetStatus === 'agendado' && (agendamento.status === 'agendado' || agendamento.status === 'confirmado')) {
+          setDraggedItem(null);
+          setDraggedItemStatus(null);
+          return;
+        }
+        // Para outros status, verificar se já está no status de destino
+        if (targetStatus !== 'agendado' && agendamento.status === targetStatus) {
+          setDraggedItem(null);
+          setDraggedItemStatus(null);
+          return;
+        }
+      }
+
+      // Atualizar status do agendamento diretamente
+      setUpdating(draggedItem);
+      try {
+        await updateAgendamentoStatus(draggedItem, targetStatus as 'agendado' | 'confirmado' | 'cancelado' | 'concluido');
+        if (onStatusUpdate) {
+          onStatusUpdate();
+        }
+      } catch (error) {
+        console.error('Erro ao atualizar status:', error);
+        alert('Erro ao atualizar status do agendamento. Tente novamente.');
+      } finally {
+        setUpdating(null);
+        setDraggedItem(null);
+        setDraggedItemStatus(null);
+      }
+    } else {
+      // Validar se pode mover para o status de destino (atendimentos)
+      if (draggedItemStatus !== 'em_andamento' && draggedItemStatus !== 'aberto') {
+        setDraggedItem(null);
+        setDraggedItemStatus(null);
+        return;
+      }
+
+      // Não fazer nada se já estiver no status de destino
+      const atendimento = atendimentos.find(a => a.id === draggedItem);
+      if (atendimento && atendimento.status === targetStatus) {
+        setDraggedItem(null);
+        setDraggedItemStatus(null);
+        return;
+      }
+
+      // Se estiver movendo para "encerrado", mostrar modal de confirmação
+      if (targetStatus === 'encerrado') {
+        setPendingUpdate({ id: draggedItem, status: targetStatus });
+        setShowConfirmModal(true);
+        setDraggedItem(null);
+        setDraggedItemStatus(null);
+        return;
+      }
+
+      // Para outros status, atualizar diretamente
+      setUpdating(draggedItem);
+      try {
+        await updateAtendimentoStatus(draggedItem, targetStatus as 'em_andamento' | 'encerrado');
+        if (onStatusUpdate) {
+          onStatusUpdate();
+        }
+      } catch (error) {
+        console.error('Erro ao atualizar status:', error);
+        alert('Erro ao atualizar status do atendimento. Tente novamente.');
+      } finally {
+        setUpdating(null);
+        setDraggedItem(null);
+        setDraggedItemStatus(null);
+      }
     }
   };
 
@@ -133,7 +212,11 @@ export function AtendimentoKanban({
 
     setUpdating(pendingUpdate.id);
     try {
-      await updateAtendimentoStatus(pendingUpdate.id, pendingUpdate.status);
+      if (isAgendamento) {
+        await updateAgendamentoStatus(pendingUpdate.id, pendingUpdate.status as 'agendado' | 'confirmado' | 'cancelado' | 'concluido');
+      } else {
+        await updateAtendimentoStatus(pendingUpdate.id, pendingUpdate.status as 'em_andamento' | 'encerrado');
+      }
       if (onStatusUpdate) {
         onStatusUpdate();
       }
@@ -141,7 +224,7 @@ export function AtendimentoKanban({
       setPendingUpdate(null);
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
-      alert('Erro ao atualizar status do atendimento. Tente novamente.');
+      alert(`Erro ao atualizar status do ${isAgendamento ? 'agendamento' : 'atendimento'}. Tente novamente.`);
     } finally {
       setUpdating(null);
     }
@@ -205,26 +288,34 @@ export function AtendimentoKanban({
     );
   }
 
-  const atendimentoParaConfirmar = pendingUpdate 
-    ? atendimentos.find(a => a.id === pendingUpdate.id)
+  const itemParaConfirmar = pendingUpdate 
+    ? (isAgendamento 
+        ? agendamentos.find(a => a.id === pendingUpdate.id)
+        : atendimentos.find(a => a.id === pendingUpdate.id))
     : null;
+
+  const itemNome = isAgendamento 
+    ? (itemParaConfirmar as Agendamento | undefined)?.cliente_nome
+    : (itemParaConfirmar as Atendimento | undefined)?.cliente_nome;
 
   return (
     <>
       <Modal
         isOpen={showConfirmModal}
         onClose={handleCancelFinalizacao}
-        title="Confirmar Finalização"
+        title={isAgendamento ? "Confirmar Alteração" : "Confirmar Finalização"}
         closeOnClickOutside={false}
         size="md"
       >
         <div className="space-y-4">
           <p className="text-gray-700">
-            Deseja realmente finalizar o atendimento do lead{' '}
-            <strong>{atendimentoParaConfirmar?.cliente_nome || 'Cliente'}</strong>?
+            Deseja realmente {isAgendamento ? 'alterar o status' : 'finalizar o atendimento'} do lead{' '}
+            <strong>{itemNome || 'Cliente'}</strong>?
           </p>
           <p className="text-sm text-gray-500">
-            Esta ação moverá o atendimento para a coluna de finalizados.
+            {isAgendamento 
+              ? 'Esta ação alterará o status do agendamento.'
+              : 'Esta ação moverá o atendimento para a coluna de finalizados.'}
           </p>
           <div className="flex justify-end gap-3 pt-4">
             <Button
@@ -239,7 +330,7 @@ export function AtendimentoKanban({
               onClick={handleConfirmFinalizacao}
               disabled={updating === pendingUpdate?.id}
             >
-              {updating === pendingUpdate?.id ? 'Finalizando...' : 'Confirmar Finalização'}
+              {updating === pendingUpdate?.id ? (isAgendamento ? 'Atualizando...' : 'Finalizando...') : 'Confirmar'}
             </Button>
           </div>
         </div>
@@ -247,11 +338,24 @@ export function AtendimentoKanban({
 
       <div className="flex gap-6 overflow-x-auto h-full pb-4">
         {columns.map((column) => {
-        const columnAtendimentos = atendimentosPorStatus[column.id];
-        const clientCount = columnAtendimentos.length;
+        const columnItems = dadosPorStatus[column.id as keyof typeof dadosPorStatus] || [];
+        const clientCount = columnItems.length;
 
         const isDragOver = dragOverColumn === column.id;
-        const canDropHere = draggedItemStatus === 'em_andamento' || draggedItemStatus === 'aberto';
+        const canDropHere = isAgendamento 
+          ? (draggedItemStatus === 'agendado' || draggedItemStatus === 'confirmado')
+          : (draggedItemStatus === 'em_andamento' || draggedItemStatus === 'aberto');
+
+        const getColumnTextColor = () => {
+          if (isAgendamento) {
+            if (column.id === 'agendado') return 'text-blue-600';
+            if (column.id === 'concluido') return 'text-green-600';
+            if (column.id === 'cancelado') return 'text-red-600';
+          } else {
+            return column.id === 'em_andamento' ? 'text-blue-600' : 'text-gray-500';
+          }
+          return 'text-gray-500';
+        };
 
         return (
           <div
@@ -259,95 +363,114 @@ export function AtendimentoKanban({
             className={`flex-shrink-0 w-80 h-full bg-white rounded-lg shadow-sm border-l border-r border-b border-gray-50 transition-all flex flex-col ${
               isDragOver && canDropHere ? 'bg-blue-50 border-[#9a9a9a] border-opacity-50 shadow-md' : ''
             }`}
-            style={{ borderTopWidth: '4px', borderTopStyle: 'solid', borderTopColor: column.id === 'em_andamento' ? '#3b82f6' : '#9ca3af' }}
+            style={{ borderTopWidth: '4px', borderTopStyle: 'solid', borderTopColor: column.borderColor }}
             onDragOver={(e) => handleDragOver(e, column.id)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, column.id)}
           >
             {/* Header da coluna */}
             <div className="p-4 border-b border-gray-200 flex-shrink-0">
-              {/* Primeira linha: nomeStatus | espaço | 3 pontos */}
               <div className="flex items-center justify-between mb-2">
-                <h3 className={`text-sm font-medium ${
-                  column.id === 'em_andamento' 
-                    ? 'text-blue-600' 
-                    : 'text-gray-500'
-                }`}>
+                <h3 className={`text-sm font-medium ${getColumnTextColor()}`}>
                   {column.title}
                 </h3>
-                <span className="text-gray-600 text-sm">{clientCount} {clientCount === 1 ? 'atendimento' : 'atendimentos'}</span>
+                <span className="text-gray-600 text-sm">
+                  {clientCount} {clientCount === 1 
+                    ? (isAgendamento ? 'agendamento' : 'atendimento')
+                    : (isAgendamento ? 'agendamentos' : 'atendimentos')}
+                </span>
               </div>
             </div>
 
             {/* Cards */}
             <div className="p-4 space-y-3 flex-1 overflow-y-auto">
-              {columnAtendimentos.length === 0 ? (
+              {columnItems.length === 0 ? (
                 <div className="border-2 border-dashed border-gray-200 rounded-lg py-12 text-center">
-                  <span className="text-gray-400 text-sm">Nenhum atendimento</span>
+                  <span className="text-gray-400 text-sm">
+                    Nenhum {isAgendamento ? 'agendamento' : 'atendimento'}
+                  </span>
                 </div>
               ) : (
-                columnAtendimentos.map((atendimento) => {
-                  const isDragging = draggedItem === atendimento.id;
-                  const isUpdating = updating === atendimento.id;
+                columnItems.map((item) => {
+                  const isDragging = draggedItem === item.id;
+                  const isUpdating = updating === item.id;
+                  
+                  const itemData = item as Atendimento | Agendamento;
+                  const clienteNome = itemData.cliente_nome;
+                  const clienteFoto = itemData.cliente_foto_perfil;
+                  const telefoneCliente = isAgendamento 
+                    ? (itemData as Agendamento).telefone_cliente || ''
+                    : (itemData as Atendimento).telefone_cliente;
+                  const clienteId = itemData.cliente_id;
+                  const createdAt = itemData.created_at;
+                  const status = itemData.status;
+
+                  // Determinar se o item pode ser arrastado
+                  const canDrag = isAgendamento
+                    ? (status === 'agendado' || status === 'confirmado')
+                    : (status === 'em_andamento' || status === 'aberto' || !status);
 
                   return (
                     <div
-                      key={atendimento.id}
-                      draggable={!isUpdating && (atendimento.status === 'em_andamento' || atendimento.status === 'aberto' || !atendimento.status)}
-                      onDragStart={(e) => handleDragStart(e, atendimento.id, atendimento.status || 'aberto')}
+                      key={item.id}
+                      draggable={!isUpdating && canDrag}
+                      onDragStart={(e) => handleDragStart(e, item.id, status || (isAgendamento ? 'agendado' : 'aberto'))}
                       onDragEnd={() => {
                         setDraggedItem(null);
                         setDraggedItemStatus(null);
                         setDragOverColumn(null);
                       }}
-                      onClick={() => onSelectAtendimento(atendimento.id)}
+                      onClick={() => onSelectAtendimento(item.id)}
                       className={`
                         bg-white border border-gray-200 rounded-lg p-4 transition-all
                         ${isDragging ? 'opacity-50 cursor-grabbing' : ''}
                         ${isUpdating ? 'opacity-50 cursor-wait' : 'cursor-grab hover:shadow-md'}
-                        ${!isUpdating && (atendimento.status === 'em_andamento' || atendimento.status === 'aberto' || !atendimento.status) ? 'hover:border-gray-400' : 'cursor-not-allowed opacity-60'}
+                        ${!isUpdating && canDrag ? 'hover:border-gray-400' : 'cursor-not-allowed opacity-60'}
                       `}
                     >
                       {/* Primeira linha: Foto Cliente | Nome | Ícone WhatsApp */}
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-3 flex-1 min-w-0">
-                          {atendimento.cliente_foto_perfil ? (
+                          {clienteFoto ? (
                             <img
-                              src={atendimento.cliente_foto_perfil}
-                              alt={atendimento.cliente_nome || 'Cliente'}
+                              src={clienteFoto}
+                              alt={clienteNome || 'Cliente'}
                               className="w-10 h-10 rounded-full object-cover flex-shrink-0 border border-gray-200"
                             />
                           ) : (
                             <div
                               className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0 ${getAvatarColor(
-                                atendimento.cliente_nome
+                                clienteNome
                               )}`}
                             >
-                              {getInitials(atendimento.cliente_nome)}
+                              {getInitials(clienteNome)}
                             </div>
                           )}
                           <h4 className="text-gray-900 text-sm font-semibold truncate">
-                            {atendimento.cliente_nome ||
-                              `Cliente ${atendimento.cliente_id.substring(0, 8)}`}
+                            {clienteNome || `Cliente ${clienteId.substring(0, 8)}`}
                           </h4>
                         </div>
-                        <button
-                          onClick={(e) => handleWhatsApp(e, atendimento.telefone_cliente)}
-                          className="p-1 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors flex-shrink-0"
-                          title="Abrir WhatsApp"
-                        >
-                          <WhatsAppIcon className="w-4 h-4" />
-                        </button>
+                        {telefoneCliente && (
+                          <button
+                            onClick={(e) => handleWhatsApp(e, telefoneCliente)}
+                            className="p-1 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors flex-shrink-0"
+                            title="Abrir WhatsApp"
+                          >
+                            <WhatsAppIcon className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
 
                       {/* Segunda linha: Telefone Cliente | Tempo cadastrado */}
                       <div className="flex items-center justify-between text-sm text-gray-600">
-                        <div className="flex items-center gap-2">
-                          <Phone className="w-4 h-4 text-gray-400" />
-                          <span>{atendimento.telefone_cliente}</span>
-                        </div>
+                        {telefoneCliente && (
+                          <div className="flex items-center gap-2">
+                            <Phone className="w-4 h-4 text-gray-400" />
+                            <span>{telefoneCliente}</span>
+                          </div>
+                        )}
                         <span className="text-gray-400 text-xs">
-                          {formatTimeAgo(atendimento.created_at)}
+                          {formatTimeAgo(createdAt)}
                         </span>
                       </div>
                     </div>

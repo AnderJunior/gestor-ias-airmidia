@@ -59,6 +59,7 @@ export interface Agendamento {
   usuario_id: string;
   data_e_hora: string; // ISO string
   resumo_conversa?: string;
+  link_agendamento?: string; // Link da reunião/agendamento
   status: StatusAgendamento;
   created_at: string;
   updated_at: string;

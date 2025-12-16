@@ -5,7 +5,8 @@ import {
   BarChart3, 
   Unlock, 
   Settings, 
-  Mail 
+  Mail,
+  Calendar
 } from 'lucide-react';
 import React from 'react';
 
@@ -42,5 +43,9 @@ export function SettingsIcon({ className = 'w-6 h-6', strokeWidth = 2, size, col
 
 export function MessageIcon({ className = 'w-6 h-6', strokeWidth = 2, size, color }: IconProps) {
   return <Mail className={className} strokeWidth={strokeWidth} size={size} color={color} />;
+}
+
+export function CalendarIcon({ className = 'w-5 h-5', strokeWidth = 2, size, color }: IconProps) {
+  return <Calendar className={className} strokeWidth={strokeWidth} size={size} color={color} />;
 }
 

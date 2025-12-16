@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface ModalProps {
   isOpen: boolean;
@@ -13,6 +14,12 @@ interface ModalProps {
 }
 
 export function Modal({ isOpen, onClose, title, children, closeOnClickOutside = true, size = 'md', width }: ModalProps) {
+  const [mounted, setMounted] = React.useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -24,7 +31,7 @@ export function Modal({ isOpen, onClose, title, children, closeOnClickOutside = 
     };
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   const sizeClasses = {
     sm: 'max-w-sm',
@@ -36,13 +43,22 @@ export function Modal({ isOpen, onClose, title, children, closeOnClickOutside = 
   const widthStyle = width ? { maxWidth: typeof width === 'number' ? `${width}px` : width } : {};
   const widthClass = width ? '' : sizeClasses[size];
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 backdrop-blur-md"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 backdrop-blur-md"
       onClick={closeOnClickOutside ? onClose : undefined}
+      style={{ 
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100%',
+        height: '100%'
+      }}
     >
       <div
-        className={`bg-white rounded-lg shadow-xl ${widthClass} w-full mx-4 max-h-[90vh] overflow-y-auto`}
+        className={`bg-white rounded-lg shadow-xl ${widthClass} w-full mx-4 max-h-[90vh] overflow-y-auto relative`}
         style={widthStyle}
         onClick={(e) => e.stopPropagation()}
       >
@@ -64,5 +80,7 @@ export function Modal({ isOpen, onClose, title, children, closeOnClickOutside = 
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
 

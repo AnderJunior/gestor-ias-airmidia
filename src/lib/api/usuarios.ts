@@ -4,6 +4,7 @@ export interface Usuario {
   id: string;
   nome: string | null;
   telefone_ia: string | null;
+  tipo_marcacao?: 'atendimento' | 'agendamento';
   created_at: string;
   updated_at: string;
 }
@@ -139,6 +140,53 @@ export async function upsertUsuario(nome: string, telefone_ia: string, userId?: 
 
   if (error) {
     console.error('Error upserting usuario:', error);
+    throw error;
+  }
+
+  // Limpar cache após atualização
+  if (finalUserId) {
+    clearUsuarioCache(finalUserId);
+  }
+
+  return data;
+}
+
+/**
+ * Atualiza apenas o nome do usuário
+ * @param nome - Novo nome do usuário
+ * @param userId - ID do usuário (opcional, se não fornecido busca do auth)
+ */
+export async function atualizarNomeUsuario(nome: string, userId?: string): Promise<Usuario> {
+  let finalUserId = userId;
+  
+  // Se não forneceu userId, buscar do auth
+  if (!finalUserId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+    finalUserId = user.id;
+  }
+
+  // Buscar dados atuais do usuário para manter o telefone_ia
+  const usuarioAtual = await getUsuario(finalUserId);
+  if (!usuarioAtual) {
+    throw new Error('Usuário não encontrado');
+  }
+
+  // Atualizar apenas o nome, mantendo o telefone_ia existente
+  const { data, error } = await supabase
+    .from('usuarios')
+    .update({
+      nome,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', finalUserId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating usuario nome:', error);
     throw error;
   }
 
