@@ -91,15 +91,9 @@ export function AtendimentoKanban({
     e.preventDefault();
     
     if (isAgendamento) {
-      // Para agendamentos: pode mover de "agendado" ou "confirmado" para qualquer coluna
-      const canDrop = draggedItemStatus === 'agendado' || draggedItemStatus === 'confirmado';
-      if (canDrop) {
-        e.dataTransfer.dropEffect = 'move';
-        setDragOverColumn(targetStatus);
-      } else {
-        e.dataTransfer.dropEffect = 'none';
-        setDragOverColumn(null);
-      }
+      // Para agendamentos: pode mover de qualquer status para qualquer coluna
+      e.dataTransfer.dropEffect = 'move';
+      setDragOverColumn(targetStatus);
     } else {
       // Para atendimentos: permitir drop apenas se estiver movendo de "em_andamento" para "encerrado"
       // ou se o status atual for "aberto" (pode ir para qualquer coluna)
@@ -125,13 +119,6 @@ export function AtendimentoKanban({
     if (!draggedItem) return;
 
     if (isAgendamento) {
-      // Validar se pode mover para o status de destino (agendamentos)
-      if (draggedItemStatus !== 'agendado' && draggedItemStatus !== 'confirmado') {
-        setDraggedItem(null);
-        setDraggedItemStatus(null);
-        return;
-      }
-
       // Não fazer nada se já estiver no status de destino
       const agendamento = agendamentos.find(a => a.id === draggedItem);
       if (agendamento) {
@@ -343,7 +330,7 @@ export function AtendimentoKanban({
 
         const isDragOver = dragOverColumn === column.id;
         const canDropHere = isAgendamento 
-          ? (draggedItemStatus === 'agendado' || draggedItemStatus === 'confirmado')
+          ? true // Para agendamentos, sempre permite drop
           : (draggedItemStatus === 'em_andamento' || draggedItemStatus === 'aberto');
 
         const getColumnTextColor = () => {
@@ -407,7 +394,7 @@ export function AtendimentoKanban({
 
                   // Determinar se o item pode ser arrastado
                   const canDrag = isAgendamento
-                    ? (status === 'agendado' || status === 'confirmado')
+                    ? true // Para agendamentos, sempre permite arrastar
                     : (status === 'em_andamento' || status === 'aberto' || !status);
 
                   return (

@@ -27,7 +27,6 @@ export function Sidebar() {
       label: usuarioData?.tipo_marcacao === 'agendamento' ? 'Agendamentos' : 'Atendimento', 
       icon: usuarioData?.tipo_marcacao === 'agendamento' ? <CalendarIcon /> : <ChatIcon />
     },
-    { href: ROUTES.CONFIGURACOES, label: 'Configurações', icon: <SettingsIcon /> },
   ];
 
   // Função para extrair primeiro e último nome
@@ -125,17 +124,33 @@ export function Sidebar() {
         </ul>
       </nav>
 
-      {/* Botão de Sair */}
-      <div className="p-6 border-t border-primary-100">
-        <button
-          onClick={signOut}
-          className="group w-full text-left px-3 py-2.5 rounded-lg text-gray-700 hover:bg-red-600 hover:text-white transition-all duration-200 text-sm font-medium flex items-center gap-3"
-        >
-          <span className="flex items-center justify-center text-gray-600 group-hover:text-white transition-colors duration-200">
-            <LogoutIcon />
-          </span>
-          <span>Sair</span>
-        </button>
+      {/* Configurações e Sair */}
+      <div className="p-6 border-t" style={{ borderColor: '#F3F4F6' }}>
+        <div className="space-y-2">
+          <Link
+            href={ROUTES.CONFIGURACOES}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
+              pathname === ROUTES.CONFIGURACOES
+                ? 'bg-primary-600 text-white shadow-md'
+                : 'text-gray-700 hover:bg-primary-50'
+            }`}
+          >
+            <span className={`flex items-center justify-center ${pathname === ROUTES.CONFIGURACOES ? 'text-white drop-shadow-sm' : 'text-gray-600'}`}>
+              <SettingsIcon />
+            </span>
+            <span className="text-sm font-medium flex-1">Configurações</span>
+          </Link>
+          
+          <button
+            onClick={signOut}
+            className="group w-full text-left px-3 py-2.5 rounded-lg text-gray-700 hover:bg-red-600 hover:text-white transition-all duration-200 text-sm font-medium flex items-center gap-3"
+          >
+            <span className="flex items-center justify-center text-gray-600 group-hover:text-white transition-colors duration-200">
+              <LogoutIcon />
+            </span>
+            <span>Sair</span>
+          </button>
+        </div>
       </div>
     </aside>
   );

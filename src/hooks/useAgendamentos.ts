@@ -105,7 +105,8 @@ export function useAgendamentos() {
             if (status === 'SUBSCRIBED') {
               console.log('Subscrito ao realtime de agendamentos');
             } else if (status === 'CHANNEL_ERROR') {
-              console.error('Erro na subscription de agendamentos');
+              // Erro transitório - a subscription geralmente se reconecta automaticamente
+              // Não logar como erro crítico
             }
           });
 

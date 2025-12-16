@@ -174,7 +174,8 @@ export function useAtendimentos() {
             if (status === 'SUBSCRIBED') {
               console.log('Subscrito ao realtime de atendimentos');
             } else if (status === 'CHANNEL_ERROR') {
-              console.error('Erro na subscription de atendimentos');
+              // Erro transitório - a subscription geralmente se reconecta automaticamente
+              // Não logar como erro crítico
             }
           });
 

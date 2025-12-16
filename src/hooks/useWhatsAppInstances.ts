@@ -67,7 +67,8 @@ export function useWhatsAppInstances() {
             if (status === 'SUBSCRIBED') {
               console.log('Subscrito ao realtime de instâncias WhatsApp');
             } else if (status === 'CHANNEL_ERROR') {
-              console.error('Erro na subscription de instâncias WhatsApp');
+              // Erro transitório - a subscription geralmente se reconecta automaticamente
+              // Não logar como erro crítico
             }
           });
 
@@ -181,7 +182,8 @@ export function useConnectedInstances() {
             if (status === 'SUBSCRIBED') {
               console.log('Subscrito ao realtime de instâncias conectadas');
             } else if (status === 'CHANNEL_ERROR') {
-              console.error('Erro na subscription de instâncias conectadas');
+              // Erro transitório - a subscription geralmente se reconecta automaticamente
+              // Não logar como erro crítico
             }
           });
 

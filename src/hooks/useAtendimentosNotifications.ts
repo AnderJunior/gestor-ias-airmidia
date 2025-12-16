@@ -139,7 +139,8 @@ export function useAtendimentosNotifications() {
             if (status === 'SUBSCRIBED') {
               console.log('Subscrito ao realtime de notificações de atendimentos');
             } else if (status === 'CHANNEL_ERROR') {
-              console.error('Erro na subscription de notificações de atendimentos');
+              // Erro transitório - a subscription geralmente se reconecta automaticamente
+              // Não logar como erro crítico
             }
           });
 

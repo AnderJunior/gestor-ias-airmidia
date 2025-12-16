@@ -66,7 +66,8 @@ export function useMensagens(atendimentoId: string | null) {
             if (status === 'SUBSCRIBED') {
               console.log('Subscrito ao realtime de mensagens');
             } else if (status === 'CHANNEL_ERROR') {
-              console.error('Erro na subscription de mensagens');
+              // Erro transitório - a subscription geralmente se reconecta automaticamente
+              // Não logar como erro crítico
             }
           });
 

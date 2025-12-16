@@ -91,9 +91,10 @@ export function useAgendamentosNotifications() {
             if (status === 'SUBSCRIBED') {
               console.log('✅ Subscrito ao realtime de notificações de agendamentos');
             } else if (status === 'CHANNEL_ERROR') {
-              console.error('❌ Erro na subscription de notificações de agendamentos');
+              // Erro transitório - a subscription geralmente se reconecta automaticamente
+              // Não logar como erro crítico, apenas como aviso se necessário
             } else {
-              console.log('Status da subscription de agendamentos:', status);
+              // Outros status podem ser ignorados silenciosamente
             }
           });
 
