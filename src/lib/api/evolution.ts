@@ -330,7 +330,6 @@ export async function verificarConnectionState(instanceName: string): Promise<'o
     if (response.ok) {
       const data = await response.json();
       const state = data.instance?.state || data.state;
-      console.log(`Estado de conexão da instância ${instanceName}: ${state}`);
       return state || null;
     }
     return null;

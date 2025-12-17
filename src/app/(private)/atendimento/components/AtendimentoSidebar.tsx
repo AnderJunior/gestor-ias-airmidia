@@ -124,14 +124,7 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
             );
           }
 
-          channel
-            .subscribe((status) => {
-              if (status === 'SUBSCRIBED') {
-                console.log('Subscrito ao realtime do agendamento no sidebar');
-              } else if (status === 'CHANNEL_ERROR') {
-                console.error('Erro na subscription do agendamento no sidebar');
-              }
-            });
+          channel.subscribe();
 
           channelRef.current = channel;
         } else {
@@ -211,14 +204,7 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
             );
           }
 
-          channel
-            .subscribe((status) => {
-              if (status === 'SUBSCRIBED') {
-                console.log('Subscrito ao realtime do atendimento no sidebar');
-              } else if (status === 'CHANNEL_ERROR') {
-                console.error('Erro na subscription do atendimento no sidebar');
-              }
-            });
+          channel.subscribe();
 
           channelRef.current = channel;
         }

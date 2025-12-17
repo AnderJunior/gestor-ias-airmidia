@@ -39,20 +39,27 @@ export function useMensagensPorCliente(clienteId: string | null) {
         }
 
         // Criar subscription para mudanças na tabela mensagens
-        // Como as mensagens podem estar em múltiplos atendimentos, precisamos escutar todos
+        // Filtrar apenas mensagens deste cliente e usuário para reduzir requisições
         const channel = supabase
-          .channel(`mensagens-cliente:${clienteId}`)
+          .channel(`mensagens-cliente:${clienteId}:${user.id}`)
           .on(
             'postgres_changes',
             {
               event: '*',
               schema: 'public',
               table: 'mensagens',
+              filter: `cliente_id=eq.${clienteId}`,
             },
             async (payload) => {
               if (!isMounted) return;
 
-              // Recarregar mensagens quando houver mudanças
+              // Verificar se a mensagem é do usuário atual antes de recarregar
+              const mensagemUsuarioId = payload.new?.usuario_id || payload.old?.usuario_id;
+              if (mensagemUsuarioId && mensagemUsuarioId !== user.id) {
+                return; // Ignorar mensagens de outros usuários
+              }
+
+              // Recarregar mensagens quando houver mudanças relevantes
               try {
                 if (user) {
                   const updatedData = await getMensagensByCliente(clienteId, user.id);
@@ -65,11 +72,7 @@ export function useMensagensPorCliente(clienteId: string | null) {
               }
             }
           )
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              console.log('Subscrito ao realtime de mensagens do cliente');
-            }
-          });
+          .subscribe();
 
         channelRef.current = channel;
       } catch (err) {
@@ -144,14 +147,16 @@ export function useClientesComConversas() {
     loadClientes();
 
     // Escutar mudanças em atendimentos e mensagens para atualizar a lista
+    // Filtrar apenas mudanças do usuário atual para reduzir requisições
     const atendimentosChannel = supabase
-      .channel('atendimentos-updates')
+      .channel(`atendimentos-updates:${user.id}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'atendimentos_solicitado',
+          filter: `usuario_id=eq.${user.id}`,
         },
         async () => {
           if (isMounted && user) {
@@ -167,13 +172,14 @@ export function useClientesComConversas() {
       .subscribe();
 
     const mensagensChannel = supabase
-      .channel('mensagens-updates')
+      .channel(`mensagens-updates:${user.id}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'mensagens',
+          filter: `usuario_id=eq.${user.id}`,
         },
         async () => {
           if (isMounted && user) {

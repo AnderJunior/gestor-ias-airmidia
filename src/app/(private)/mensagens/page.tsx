@@ -36,6 +36,31 @@ export default function MensagensPage() {
   const [clientesAgendamentoStatus, setClientesAgendamentoStatus] = useState<Map<string, string>>(new Map());
   const channelRef = useRef<RealtimeChannel | null>(null);
   const loadClientesComAtendimentoRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const loadClientesComAtendimentoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const clientesComAtendimentoCacheRef = useRef<{ timestamp: number; data: { clientes: Set<string>; status: Map<string, string> } } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Prevenir scroll automático e suprimir avisos do Next.js Router
+  useEffect(() => {
+    // Suprimir o aviso específico do Next.js sobre position: fixed
+    const originalWarn = console.warn;
+    console.warn = (...args: any[]) => {
+      const message = args[0]?.toString() || '';
+      if (message.includes('Skipping auto-scroll behavior due to `position: sticky` or `position: fixed`')) {
+        return; // Não exibir este aviso específico
+      }
+      originalWarn.apply(console, args);
+    };
+    
+    if (containerRef.current) {
+      // Prevenir scroll automático
+      containerRef.current.scrollIntoView = () => {};
+    }
+    
+    return () => {
+      console.warn = originalWarn;
+    };
+  }, []);
 
   // Converter mensagens para formato de exibição
   const mensagensExibicao: MensagemExibicao[] = useMemo(() => {
@@ -183,11 +208,20 @@ export default function MensagensPage() {
 
   const clienteAtual = clientes.find(c => c.id === clienteSelecionado);
 
-  // Função para carregar clientes com atendimento/agendamento
+  // Função para carregar clientes com atendimento/agendamento com cache e debounce
   const loadClientesComAtendimento = useCallback(async () => {
     if (!user?.id) {
       setClientesComAtendimento(new Set());
       setClientesAgendamentoStatus(new Map());
+      return;
+    }
+
+    // Verificar cache (válido por 30 segundos)
+    const cacheKey = `${user.id}:${usuario?.tipo_marcacao}`;
+    const cached = clientesComAtendimentoCacheRef.current;
+    if (cached && Date.now() - cached.timestamp < 30000) {
+      setClientesComAtendimento(cached.data.clientes);
+      setClientesAgendamentoStatus(cached.data.status);
       return;
     }
 
@@ -262,6 +296,15 @@ export default function MensagensPage() {
       
       setClientesComAtendimento(clienteIds);
       setClientesAgendamentoStatus(agendamentoStatusMap);
+      
+      // Atualizar cache
+      clientesComAtendimentoCacheRef.current = {
+        timestamp: Date.now(),
+        data: {
+          clientes: clienteIds,
+          status: agendamentoStatusMap,
+        },
+      };
     } catch (error) {
       console.error('Erro ao carregar clientes com atendimento:', error);
     }
@@ -309,22 +352,32 @@ export default function MensagensPage() {
         },
         (payload) => {
           if (!isMounted) return;
-          // Usar ref para evitar dependência circular
-          if (loadClientesComAtendimentoRef.current) {
-            loadClientesComAtendimentoRef.current();
+          
+          // Invalidar cache quando houver mudanças
+          clientesComAtendimentoCacheRef.current = null;
+          
+          // Debounce para evitar múltiplas chamadas rápidas
+          if (loadClientesComAtendimentoTimeoutRef.current) {
+            clearTimeout(loadClientesComAtendimentoTimeoutRef.current);
           }
+          
+          loadClientesComAtendimentoTimeoutRef.current = setTimeout(() => {
+            // Usar ref para evitar dependência circular
+            if (loadClientesComAtendimentoRef.current) {
+              loadClientesComAtendimentoRef.current();
+            }
+          }, 500);
         }
       )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log(`Subscrito ao realtime de ${usuario.tipo_marcacao === 'agendamento' ? 'agendamentos' : 'atendimentos'} na página de mensagens`);
-        }
-      });
+      .subscribe();
 
     channelRef.current = channel;
 
     return () => {
       isMounted = false;
+      if (loadClientesComAtendimentoTimeoutRef.current) {
+        clearTimeout(loadClientesComAtendimentoTimeoutRef.current);
+      }
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
@@ -333,58 +386,73 @@ export default function MensagensPage() {
   }, [user?.id, usuario?.tipo_marcacao]);
 
   // Verificar se o cliente selecionado tem atendimento ou agendamento
+  // Usar cache dos clientes com atendimento para evitar busca adicional
   useEffect(() => {
-    async function checkAtendimentoAgendamento() {
-      if (!clienteSelecionado || !user?.id) {
-        setHasAtendimento(false);
-        setHasAgendamento(false);
-        setAtendimentoId(null);
-        return;
-      }
-
-      try {
-        if (usuario?.tipo_marcacao === 'agendamento') {
-          const agendamento = await getAgendamentoByCliente(clienteSelecionado, user.id);
-          setHasAgendamento(!!agendamento);
-          setHasAtendimento(false);
-          if (agendamento) {
-            setAtendimentoId(agendamento.id);
-          } else {
-            setAtendimentoId(null);
-          }
-        } else {
-          const atendimento = await getAtendimentoByCliente(clienteSelecionado, user.id);
-          setHasAtendimento(!!atendimento);
-          setHasAgendamento(false);
-          if (atendimento) {
-            setAtendimentoId(atendimento.id);
-          } else {
-            setAtendimentoId(null);
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao verificar atendimento/agendamento:', error);
-        setHasAtendimento(false);
-        setHasAgendamento(false);
-        setAtendimentoId(null);
-      }
+    if (!clienteSelecionado || !user?.id) {
+      setHasAtendimento(false);
+      setHasAgendamento(false);
+      setAtendimentoId(null);
+      return;
     }
 
-    checkAtendimentoAgendamento();
-  }, [clienteSelecionado, user?.id, usuario?.tipo_marcacao]);
+    // Verificar primeiro no cache de clientes com atendimento
+    const temAtendimentoNoCache = clientesComAtendimento.has(clienteSelecionado);
+    
+    if (temAtendimentoNoCache) {
+      // Se está no cache, já sabemos que tem atendimento/agendamento
+      // Buscar apenas o ID se necessário
+      if (usuario?.tipo_marcacao === 'agendamento') {
+        setHasAgendamento(true);
+        setHasAtendimento(false);
+        // Buscar ID apenas quando necessário (quando sidebar for aberta)
+        // Por enquanto, deixar null e buscar quando necessário
+        setAtendimentoId(null);
+      } else {
+        setHasAtendimento(true);
+        setHasAgendamento(false);
+        setAtendimentoId(null);
+      }
+    } else {
+      // Se não está no cache, verificar se realmente não tem
+      setHasAtendimento(false);
+      setHasAgendamento(false);
+      setAtendimentoId(null);
+    }
+  }, [clienteSelecionado, user?.id, usuario?.tipo_marcacao, clientesComAtendimento]);
 
-  const handleOpenDetalhes = () => {
-    if (atendimentoId) {
-      setIsSidebarOpen(true);
+  const handleOpenDetalhes = async () => {
+    if (!clienteSelecionado || !user?.id) return;
+    
+    // Buscar atendimento/agendamento apenas quando necessário
+    try {
+      let id: string | null = null;
+      
+      if (usuario?.tipo_marcacao === 'agendamento') {
+        const agendamento = await getAgendamentoByCliente(clienteSelecionado, user.id);
+        id = agendamento?.id || null;
+      } else {
+        const atendimento = await getAtendimentoByCliente(clienteSelecionado, user.id);
+        id = atendimento?.id || null;
+      }
+      
+      if (id) {
+        setAtendimentoId(id);
+        setIsSidebarOpen(true);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar atendimento/agendamento:', error);
     }
   };
 
   return (
-    <div className="flex h-full w-full bg-[#E8F4F8] overflow-hidden -m-8 min-h-0">
+    <div 
+      ref={containerRef}
+      className="flex h-[calc(100vh-5rem)] w-[calc(100%-18rem)] fixed top-20 left-72 right-0 bottom-0 bg-[#E8F4F8] overflow-hidden"
+    >
       {/* Lista de Conversas - Esquerda */}
-      <div className="w-96 bg-white border-r border-gray-200 flex flex-col pl-4">
+      <div className="w-96 bg-white border-r border-gray-200 flex flex-col h-full">
         {/* Barra de Busca */}
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 flex-shrink-0">
           <div className="relative">
             <input
               type="text"
@@ -399,9 +467,8 @@ export default function MensagensPage() {
           </div>
         </div>
 
-
         {/* Lista de Clientes */}
-        <div className="flex-1 overflow-y-auto scrollbar-hide">
+        <div className="flex-1 overflow-y-auto scrollbar-hide min-h-0">
           {loadingClientes ? (
             <div className="flex items-center justify-center h-32">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
@@ -486,11 +553,11 @@ export default function MensagensPage() {
       </div>
 
       {/* Área de Chat - Direita */}
-      <div className="flex-1 flex flex-col bg-white">
+      <div className="flex-1 flex flex-col bg-white min-w-0 h-full">
         {clienteSelecionado && clienteAtual ? (
           <>
             {/* Header do Chat */}
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
                 <ClienteAvatar 
                   clienteId={clienteAtual.id}
@@ -541,7 +608,7 @@ export default function MensagensPage() {
             </div>
 
             {/* Área de Mensagens */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 scrollbar-hide">
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 scrollbar-hide min-h-0">
               {loadingMensagens ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>

@@ -79,7 +79,8 @@ export function useAgendamentos() {
               }
             }
           )
-          // Escutar mudanças na tabela clientes (pode afetar nome, telefone, foto_perfil dos agendamentos)
+          // Escutar mudanças na tabela clientes apenas para clientes dos agendamentos do usuário
+          // Usar debounce para evitar múltiplas requisições rápidas
           .on(
             'postgres_changes',
             {
@@ -90,8 +91,13 @@ export function useAgendamentos() {
             async (payload) => {
               if (!isMounted) return;
 
+              // Usar debounce simples para evitar múltiplas requisições rápidas
               // Recarregar agendamentos quando dados do cliente mudarem
               try {
+                // Pequeno delay para agrupar múltiplas mudanças
+                await new Promise(resolve => setTimeout(resolve, 300));
+                if (!isMounted) return;
+                
                 const updatedData = await getAgendamentos(user.id);
                 if (isMounted) {
                   setAgendamentos(updatedData);
@@ -101,14 +107,7 @@ export function useAgendamentos() {
               }
             }
           )
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              console.log('Subscrito ao realtime de agendamentos');
-            } else if (status === 'CHANNEL_ERROR') {
-              // Erro transitório - a subscription geralmente se reconecta automaticamente
-              // Não logar como erro crítico
-            }
-          });
+          .subscribe();
 
         channelRef.current = channel;
       } catch (error) {

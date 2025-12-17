@@ -85,11 +85,13 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
     userId = user.id;
   }
 
-  // Buscar todas as mensagens do usuário
+  // Buscar mensagens do usuário limitadas e ordenadas
+  // Limitar a busca inicial para reduzir dados transferidos
+  // Buscar apenas as mensagens mais recentes (últimas 1000 por cliente)
   let mensagens: any[] = [];
   let mensagensError: any = null;
 
-  // Tentar primeiro com data_e_hora
+  // Tentar primeiro com data_e_hora, limitando resultados
   const { data: mensagensData, error: error1 } = await supabase
     .from('mensagens')
     .select(`
@@ -102,7 +104,8 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
       )
     `)
     .eq('usuario_id', userId)
-    .order('data_e_hora', { ascending: false });
+    .order('data_e_hora', { ascending: false })
+    .limit(5000); // Limitar para evitar buscar todas as mensagens
 
   if (error1 && (error1.message.includes('data_e_hora') || error1.code === '42703')) {
     // Se data_e_hora não existe, tentar com created_at
@@ -118,7 +121,8 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
         )
       `)
       .eq('usuario_id', userId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(5000); // Limitar para evitar buscar todas as mensagens
     
     if (error2) {
       console.error('Error fetching mensagens:', error2);

@@ -62,14 +62,7 @@ export function useMensagens(atendimentoId: string | null) {
               }
             }
           )
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              console.log('Subscrito ao realtime de mensagens');
-            } else if (status === 'CHANNEL_ERROR') {
-              // Erro transitório - a subscription geralmente se reconecta automaticamente
-              // Não logar como erro crítico
-            }
-          });
+          .subscribe();
 
         channelRef.current = channel;
       } catch (err) {

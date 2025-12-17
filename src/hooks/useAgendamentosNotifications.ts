@@ -25,19 +25,14 @@ export function useAgendamentosNotifications() {
 
     async function setupRealtime() {
       try {
-        console.log('Configurando realtime de notificações de agendamentos para usuário:', user.id);
-        
         // Carregar agendamentos iniciais para inicializar a referência
         const data = await getAgendamentos(user.id);
         if (!isMounted) return;
-
-        console.log('Agendamentos iniciais carregados:', data.length);
 
         // Inicializar referência dos IDs apenas na primeira vez
         if (!isInitializedRef.current) {
           previousAgendamentosIdsRef.current = new Set(data.map(a => a.id));
           isInitializedRef.current = true;
-          console.log('IDs iniciais de agendamentos:', Array.from(previousAgendamentosIdsRef.current));
         }
 
         // Limpar subscription anterior se existir
@@ -87,16 +82,7 @@ export function useAgendamentosNotifications() {
               }
             }
           )
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              console.log('✅ Subscrito ao realtime de notificações de agendamentos');
-            } else if (status === 'CHANNEL_ERROR') {
-              // Erro transitório - a subscription geralmente se reconecta automaticamente
-              // Não logar como erro crítico, apenas como aviso se necessário
-            } else {
-              // Outros status podem ser ignorados silenciosamente
-            }
-          });
+          .subscribe();
 
         channelRef.current = channel;
       } catch (error) {
