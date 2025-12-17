@@ -11,6 +11,7 @@ import { getAtendimentosRecentes } from '@/lib/api/atendimentos';
 const pageTitles: Record<string, string> = {
   [ROUTES.DASHBOARD]: 'Dashboard',
   [ROUTES.ATENDIMENTO]: 'Atendimento',
+  [ROUTES.MENSAGENS]: 'Mensagens',
 };
 
 export function Topbar() {

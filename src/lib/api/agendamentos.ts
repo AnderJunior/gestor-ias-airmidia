@@ -216,6 +216,49 @@ export async function updateAgendamentoStatus(
 }
 
 /**
+ * Busca agendamento por cliente_id e usuario_id
+ * @param clienteId - ID do cliente
+ * @param userId - ID do usuário
+ */
+export async function getAgendamentoByCliente(clienteId: string, userId: string): Promise<Agendamento | null> {
+  // Buscar agendamento mais recente do cliente
+  const { data, error } = await supabase
+    .from('agendamentos')
+    .select(`
+      *,
+      clientes (
+        nome,
+        telefone,
+        foto_perfil
+      )
+    `)
+    .eq('cliente_id', clienteId)
+    .eq('usuario_id', userId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    cliente_id: data.cliente_id,
+    cliente_nome: data.clientes?.nome || null,
+    cliente_foto_perfil: data.clientes?.foto_perfil || undefined,
+    telefone_cliente: data.clientes?.telefone || undefined,
+    usuario_id: data.usuario_id,
+    data_e_hora: data.data_e_hora,
+    resumo_conversa: data.resumo_conversa || undefined,
+    link_agendamento: data.link_agendamento || undefined,
+    status: data.status,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+  };
+}
+
+/**
  * Busca um agendamento por ID
  * @param agendamentoId - ID do agendamento
  */

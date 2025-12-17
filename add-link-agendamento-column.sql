@@ -31,3 +31,4 @@ WHERE table_schema = 'public'
   AND table_name = 'agendamentos'
   AND column_name = 'link_agendamento';
 
+

@@ -229,6 +229,65 @@ export async function createAtendimento(
   };
 }
 
+/**
+ * Busca atendimento por cliente_id e usuario_id
+ * @param clienteId - ID do cliente
+ * @param userId - ID do usuário
+ */
+export async function getAtendimentoByCliente(clienteId: string, userId?: string): Promise<Atendimento | null> {
+  if (!userId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    userId = user.id;
+  }
+
+  const connectedInstances = await getConnectedInstances(userId);
+  const instanceIds = connectedInstances.map(inst => inst.id);
+
+  if (instanceIds.length === 0) {
+    return null;
+  }
+
+  // Buscar atendimento mais recente do cliente
+  const { data, error } = await supabase
+    .from('atendimentos_solicitado')
+    .select(`
+      *,
+      clientes (
+        nome,
+        telefone,
+        foto_perfil
+      ),
+      whatsapp_instances (
+        telefone
+      )
+    `)
+    .eq('cliente_id', clienteId)
+    .eq('usuario_id', userId)
+    .in('whatsapp_instance_id', instanceIds)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    cliente_id: data.cliente_id,
+    cliente_nome: data.clientes?.nome,
+    cliente_foto_perfil: data.clientes?.foto_perfil || undefined,
+    telefone_cliente: data.clientes?.telefone || '',
+    telefone_usuario: data.whatsapp_instances?.telefone || '',
+    usuario_id: data.usuario_id,
+    status: (data.status || 'aberto') as StatusAtendimento,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+    resumo_conversa: data.resumo_conversa || undefined,
+  };
+}
+
 export async function getAtendimentoById(id: string): Promise<Atendimento | null> {
   // Buscar atendimento com joins
   const { data, error } = await supabase

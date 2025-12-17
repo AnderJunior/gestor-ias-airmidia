@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { ROUTES } from '@/lib/constants';
 import { useAuth } from '@/hooks/useAuth';
 import { useUsuario } from '@/hooks/useUsuario';
-import { DashboardIcon, ChatIcon, LogoutIcon, CalendarIcon, SettingsIcon } from '@/components/icons/NavIcons';
+import { DashboardIcon, ChatIcon, LogoutIcon, CalendarIcon, SettingsIcon, MessageIcon } from '@/components/icons/NavIcons';
 import React from 'react';
 
 interface NavItem {
@@ -27,6 +27,7 @@ export function Sidebar() {
       label: usuarioData?.tipo_marcacao === 'agendamento' ? 'Agendamentos' : 'Atendimento', 
       icon: usuarioData?.tipo_marcacao === 'agendamento' ? <CalendarIcon /> : <ChatIcon />
     },
+    { href: ROUTES.MENSAGENS, label: 'Mensagens', icon: <MessageIcon /> },
   ];
 
   // Função para extrair primeiro e último nome

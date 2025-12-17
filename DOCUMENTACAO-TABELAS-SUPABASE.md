@@ -188,3 +188,4 @@ Isso permite que a aplicação receba atualizações em tempo real quando dados 
 - `enable-realtime.sql` - Script para habilitar Realtime nas tabelas
 - `create-table-agendamentos.sql` - Script específico para criar a tabela de agendamentos
 
+
