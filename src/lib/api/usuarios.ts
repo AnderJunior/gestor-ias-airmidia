@@ -5,6 +5,9 @@ export interface Usuario {
   nome: string | null;
   telefone_ia: string | null;
   tipo_marcacao?: 'atendimento' | 'agendamento';
+  tipo?: 'cliente' | 'administracao';
+  fase?: 'teste' | 'producao';
+  ativo?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -196,5 +199,59 @@ export async function atualizarNomeUsuario(nome: string, userId?: string): Promi
   }
 
   return data;
+}
+
+/**
+ * Busca todos os usuários (clientes) para administração
+ * Exclui apenas usuários com tipo 'administracao'
+ * Inclui clientes ativos e inativos
+ */
+export async function getAllUsuarios(): Promise<Usuario[]> {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('*')
+    .neq('tipo', 'administracao')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching usuarios:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Busca estatísticas de clientes para administração
+ */
+export interface EstatisticasClientes {
+  totalAtivos: number;
+  totalTeste: number;
+  totalProducao: number;
+}
+
+export async function getEstatisticasClientes(): Promise<EstatisticasClientes> {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('fase, tipo')
+    .neq('tipo', 'administracao')
+    .eq('ativo', true);
+
+  if (error) {
+    console.error('Error fetching estatisticas:', error);
+    throw error;
+  }
+
+  const usuarios = data || [];
+  
+  const totalAtivos = usuarios.length;
+  const totalTeste = usuarios.filter(u => u.fase === 'teste').length;
+  const totalProducao = usuarios.filter(u => u.fase === 'producao').length;
+
+  return {
+    totalAtivos,
+    totalTeste,
+    totalProducao,
+  };
 }
 

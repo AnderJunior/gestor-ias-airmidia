@@ -25,6 +25,8 @@ export function useAgendamentosNotifications() {
 
     async function setupRealtime() {
       try {
+        console.log('Configurando realtime de notificações de agendamentos para usuário:', user.id);
+        
         // Carregar agendamentos iniciais para inicializar a referência
         const data = await getAgendamentos(user.id);
         if (!isMounted) return;
@@ -33,6 +35,7 @@ export function useAgendamentosNotifications() {
         if (!isInitializedRef.current) {
           previousAgendamentosIdsRef.current = new Set(data.map(a => a.id));
           isInitializedRef.current = true;
+          console.log('IDs iniciais de agendamentos:', Array.from(previousAgendamentosIdsRef.current));
         }
 
         // Limpar subscription anterior se existir
@@ -54,15 +57,27 @@ export function useAgendamentosNotifications() {
             async (payload) => {
               if (!isMounted) return;
 
+              console.log('Evento realtime de agendamento recebido:', {
+                eventType: payload.eventType,
+                table: payload.table,
+                new: payload.new,
+                old: payload.old
+              });
+
               // Recarregar agendamentos quando houver mudanças relevantes
               try {
                 const previousIds = new Set(previousAgendamentosIdsRef.current);
+                console.log('IDs anteriores de agendamentos:', Array.from(previousIds));
+                
                 const updatedData = await getAgendamentos(user.id);
                 if (!isMounted) return;
 
                 // Detectar novos agendamentos comparando IDs antes e depois
                 const currentIds = new Set(updatedData.map(a => a.id));
                 const newIds = [...currentIds].filter(id => !previousIds.has(id));
+                
+                console.log('IDs atuais de agendamentos:', Array.from(currentIds));
+                console.log('Novos IDs de agendamentos detectados:', newIds);
                 
                 // Se for um INSERT ou se detectamos novos IDs, tocar som
                 if (payload.eventType === 'INSERT' || newIds.length > 0) {
@@ -73,6 +88,8 @@ export function useAgendamentosNotifications() {
                   });
                   // Tocar som 2 vezes quando um novo agendamento for adicionado
                   playNotificationSound();
+                } else {
+                  console.log('Nenhum novo agendamento detectado. Não tocando som.');
                 }
                 
                 // Atualizar referência dos IDs
@@ -82,9 +99,15 @@ export function useAgendamentosNotifications() {
               }
             }
           )
-          .subscribe();
+          .subscribe((status) => {
+            console.log('Status da subscription de agendamentos:', status);
+            if (status === 'SUBSCRIBED') {
+              console.log('Subscription de agendamentos ativa!');
+            }
+          });
 
         channelRef.current = channel;
+        console.log('Canal de notificações de agendamentos criado:', channelRef.current);
       } catch (error) {
         if (isMounted) {
           console.error('Erro ao configurar realtime de notificações de agendamentos:', error);

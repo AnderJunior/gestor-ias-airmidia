@@ -29,3 +29,4 @@ CREATE POLICY "Usuários podem atualizar seus próprios clientes"
   );
 
 
+

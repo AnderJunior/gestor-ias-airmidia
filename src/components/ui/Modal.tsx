@@ -45,7 +45,7 @@ export function Modal({ isOpen, onClose, title, children, closeOnClickOutside = 
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 backdrop-blur-md"
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/75 backdrop-blur-md"
       onClick={closeOnClickOutside ? onClose : undefined}
       style={{ 
         position: 'fixed',
@@ -54,7 +54,8 @@ export function Modal({ isOpen, onClose, title, children, closeOnClickOutside = 
         right: 0,
         bottom: 0,
         width: '100%',
-        height: '100%'
+        height: '100%',
+        zIndex: 99999
       }}
     >
       <div

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { ROUTES } from '@/lib/constants';
 import { useAuth } from '@/hooks/useAuth';
 import { useUsuario } from '@/hooks/useUsuario';
-import { DashboardIcon, ChatIcon, LogoutIcon, CalendarIcon, SettingsIcon, MessageIcon } from '@/components/icons/NavIcons';
+import { DashboardIcon, ChatIcon, LogoutIcon, CalendarIcon, SettingsIcon, MessageIcon, ShieldIcon, UsersIcon } from '@/components/icons/NavIcons';
 import React from 'react';
 
 interface NavItem {
@@ -20,14 +20,22 @@ export function Sidebar() {
   const { user, signOut } = useAuth();
   const { usuario: usuarioData } = useUsuario();
 
+  const isAdmin = usuarioData?.tipo === 'administracao';
+
   const navItems: NavItem[] = [
-    { href: ROUTES.DASHBOARD, label: 'Dashboard', icon: <DashboardIcon /> },
-    { 
-      href: ROUTES.ATENDIMENTO, 
-      label: usuarioData?.tipo_marcacao === 'agendamento' ? 'Agendamentos' : 'Atendimento', 
-      icon: usuarioData?.tipo_marcacao === 'agendamento' ? <CalendarIcon /> : <ChatIcon />
-    },
-    { href: ROUTES.MENSAGENS, label: 'Mensagens', icon: <MessageIcon /> },
+    ...(isAdmin ? [] : [
+      { href: ROUTES.DASHBOARD, label: 'Dashboard', icon: <DashboardIcon /> },
+      { 
+        href: ROUTES.ATENDIMENTO, 
+        label: usuarioData?.tipo_marcacao === 'agendamento' ? 'Agendamentos' : 'Atendimento', 
+        icon: usuarioData?.tipo_marcacao === 'agendamento' ? <CalendarIcon /> : <UsersIcon />
+      },
+      { href: ROUTES.MENSAGENS, label: 'Mensagens', icon: <MessageIcon /> },
+    ]),
+    ...(isAdmin ? [
+      { href: ROUTES.ADMIN_DASHBOARD, label: 'Dashboard', icon: <DashboardIcon /> },
+      { href: ROUTES.ADMIN_CLIENTES, label: 'Clientes', icon: <UsersIcon /> },
+    ] : []),
   ];
 
   // Função para extrair primeiro e último nome

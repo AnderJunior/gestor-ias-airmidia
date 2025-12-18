@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useUsuario } from '@/hooks/useUsuario';
 import { verificarConnectionState } from '@/lib/api/evolution';
-import { sincronizarStatusInstancia } from '@/lib/api/whatsapp';
+import { sincronizarStatusInstancia, getInstanceNameByUsuario } from '@/lib/api/whatsapp';
 import { ConnectionNotification } from '@/components/notifications/ConnectionNotification';
 import { WhatsAppConnectionModal } from './WhatsAppConnectionModal';
 import { useNotifications } from '@/contexts/NotificationsContext';
@@ -16,28 +16,51 @@ export function VerificacaoConexaoWhatsApp() {
   const [mostrarNotificacao, setMostrarNotificacao] = useState(false);
   const [mostrarModal, setMostrarModal] = useState(false);
 
-  // Calcular telefone e instanceName uma única vez baseado no usuario
-  const { telefoneUsuario, instanceName } = useMemo(() => {
-    if (!usuario || !usuario.telefone_ia) {
-      return { telefoneUsuario: null, instanceName: '' };
-    }
-
-    const primeiroNome = usuario.nome ? usuario.nome.trim().split(/\s+/)[0] : 'usuario';
-    const telefoneLimpo = usuario.telefone_ia.replace(/\D/g, '');
-    const instanceNameGerado = `${primeiroNome}${telefoneLimpo}`.toLowerCase();
-
-    return {
-      telefoneUsuario: usuario.telefone_ia,
-      instanceName: instanceNameGerado,
-    };
-  }, [usuario]);
+  // Buscar instanceName da tabela whatsapp_instances
+  const [instanceName, setInstanceName] = useState<string>('');
+  const telefoneUsuario = usuario?.telefone_ia || null;
 
   const verificando = authLoading || usuarioLoading;
 
+  // Se o usuário for administrador, não verificar conexão WhatsApp
+  // Verificar após o carregamento para evitar problemas com hooks
+  useEffect(() => {
+    if (!verificando && usuario?.tipo === 'administracao') {
+      // Não fazer nada se for administrador
+      return;
+    }
+  }, [verificando, usuario?.tipo]);
+
+  useEffect(() => {
+    // Não executar se for administrador
+    if (usuario?.tipo === 'administracao') {
+      return;
+    }
+
+    async function loadInstanceName() {
+      if (!user?.id) {
+        setInstanceName('');
+        return;
+      }
+
+      try {
+        const instanceNameFromDb = await getInstanceNameByUsuario(user.id);
+        setInstanceName(instanceNameFromDb || '');
+      } catch (error) {
+        console.error('Erro ao buscar instance_name:', error);
+        setInstanceName('');
+      }
+    }
+
+    if (user?.id) {
+      loadInstanceName();
+    }
+  }, [user?.id, usuario?.tipo]);
+
   // Verificar status na Evolution API periodicamente (consolidado - única verificação)
   useEffect(() => {
-    // Não verificar se o modal estiver aberto ou se não tiver dados do usuário
-    if (mostrarModal || !telefoneUsuario || !instanceName || !user?.id) {
+    // Não verificar se for administrador, se o modal estiver aberto ou se não tiver dados do usuário
+    if (usuario?.tipo === 'administracao' || mostrarModal || !telefoneUsuario || !instanceName || !user?.id) {
       return;
     }
 
@@ -152,6 +175,11 @@ export function VerificacaoConexaoWhatsApp() {
 
   // Não renderiza nada enquanto está verificando ou se não há usuário
   if (verificando || !user) {
+    return null;
+  }
+
+  // Se o usuário for administrador, não verificar conexão WhatsApp
+  if (usuario?.tipo === 'administracao') {
     return null;
   }
 

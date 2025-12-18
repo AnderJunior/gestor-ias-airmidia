@@ -7,8 +7,8 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { WhatsAppConnectionModal } from '@/components/whatsapp/WhatsAppConnectionModal';
-import { verificarStatusConexaoSupabase, sincronizarStatusInstancia, getWhatsAppInstanceByInstanceName } from '@/lib/api/whatsapp';
-import { gerarNomeInstancia, fazerLogoutInstancia } from '@/lib/api/evolution';
+import { verificarStatusConexaoSupabase, sincronizarStatusInstancia, getWhatsAppInstanceByInstanceName, getInstanceNameByUsuario } from '@/lib/api/whatsapp';
+import { fazerLogoutInstancia } from '@/lib/api/evolution';
 import { atualizarNomeUsuario } from '@/lib/api/usuarios';
 import { CalendarIcon, X } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
@@ -33,17 +33,28 @@ export default function ConfiguracoesPage() {
     }
   }, [usuario?.nome]);
 
-  // Calcular instanceName e verificar status WhatsApp
-  const { instanceName, telefoneUsuario } = useMemo(() => {
-    if (!usuario || !usuario.telefone_ia) {
-      return { instanceName: '', telefoneUsuario: null };
+  // Buscar instanceName da tabela whatsapp_instances
+  const [instanceName, setInstanceName] = useState<string>('');
+  const telefoneUsuario = usuario?.telefone_ia || null;
+
+  useEffect(() => {
+    async function loadInstanceName() {
+      if (!user?.id) {
+        setInstanceName('');
+        return;
+      }
+
+      try {
+        const instanceNameFromDb = await getInstanceNameByUsuario(user.id);
+        setInstanceName(instanceNameFromDb || '');
+      } catch (error) {
+        console.error('Erro ao buscar instance_name:', error);
+        setInstanceName('');
+      }
     }
-    const instanceNameGerado = gerarNomeInstancia(usuario.nome, usuario.telefone_ia);
-    return {
-      instanceName: instanceNameGerado,
-      telefoneUsuario: usuario.telefone_ia,
-    };
-  }, [usuario]);
+
+    loadInstanceName();
+  }, [user?.id]);
 
   // Verificar status WhatsApp
   useEffect(() => {

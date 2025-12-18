@@ -27,6 +27,8 @@ export function useAtendimentosNotifications() {
 
     async function setupRealtime() {
       try {
+        console.log('Configurando realtime de notificações de atendimentos para usuário:', user.id);
+        
         // Carregar atendimentos iniciais para inicializar a referência
         const data = await getAtendimentos(user.id);
         if (!isMounted) return;
@@ -35,6 +37,7 @@ export function useAtendimentosNotifications() {
         if (!isInitializedRef.current) {
           previousAtendimentosIdsRef.current = new Set(data.map(a => a.id));
           isInitializedRef.current = true;
+          console.log('IDs iniciais de atendimentos:', Array.from(previousAtendimentosIdsRef.current));
         }
 
         // Buscar instâncias conectadas para filtrar o realtime
@@ -44,7 +47,10 @@ export function useAtendimentosNotifications() {
         const instanceIds = connectedInstances.map(inst => inst.id);
         instanceIdsRef.current = instanceIds;
 
+        console.log('Instâncias conectadas:', instanceIds);
+
         if (instanceIds.length === 0) {
+          console.warn('Nenhuma instância conectada. Realtime de notificações não será configurado.');
           return;
         }
 
@@ -66,12 +72,26 @@ export function useAtendimentosNotifications() {
             async (payload) => {
               if (!isMounted) return;
 
+              console.log('Evento realtime recebido:', {
+                eventType: payload.eventType,
+                table: payload.table,
+                new: payload.new,
+                old: payload.old
+              });
+
               // Filtrar apenas mudanças relacionadas às instâncias conectadas do usuário
               const changedInstanceId = payload.new?.whatsapp_instance_id || payload.old?.whatsapp_instance_id;
+              
+              console.log('Verificando instância:', {
+                changedInstanceId,
+                connectedInstances: instanceIdsRef.current,
+                isConnected: changedInstanceId ? instanceIdsRef.current.includes(changedInstanceId) : 'N/A'
+              });
               
               // Se for INSERT ou UPDATE, verificar se a instância está nas conectadas
               if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
                 if (changedInstanceId && !instanceIdsRef.current.includes(changedInstanceId)) {
+                  console.log('Ignorando mudança de instância não conectada:', changedInstanceId);
                   return; // Ignorar mudanças de instâncias não conectadas
                 }
               }
@@ -79,16 +99,28 @@ export function useAtendimentosNotifications() {
               // Recarregar atendimentos quando houver mudanças relevantes
               try {
                 const previousIds = new Set(previousAtendimentosIdsRef.current);
+                console.log('IDs anteriores:', Array.from(previousIds));
+                
                 const updatedData = await getAtendimentos(user.id);
                 if (isMounted) {
                   // Detectar novos atendimentos comparando IDs antes e depois
                   const currentIds = new Set(updatedData.map(a => a.id));
                   const newIds = [...currentIds].filter(id => !previousIds.has(id));
                   
+                  console.log('IDs atuais:', Array.from(currentIds));
+                  console.log('Novos IDs detectados:', newIds);
+                  
                   // Se for um INSERT ou se detectamos novos IDs, tocar som
                   if (payload.eventType === 'INSERT' || newIds.length > 0) {
+                    console.log('Novo atendimento detectado! Tocando som...', {
+                      eventType: payload.eventType,
+                      newIds,
+                      payload: payload.new
+                    });
                     // Tocar som 2 vezes quando um novo atendimento for adicionado
                     playNotificationSound();
+                  } else {
+                    console.log('Nenhum novo atendimento detectado. Não tocando som.');
                   }
                   
                   // Atualizar referência dos IDs
@@ -135,9 +167,15 @@ export function useAtendimentosNotifications() {
               }
             }
           )
-          .subscribe();
+          .subscribe((status) => {
+            console.log('Status da subscription de atendimentos:', status);
+            if (status === 'SUBSCRIBED') {
+              console.log('Subscription de atendimentos ativa!');
+            }
+          });
 
         channelRef.current = channel;
+        console.log('Canal de notificações de atendimentos criado:', channelRef.current);
       } catch (error) {
         if (isMounted) {
           console.error('Erro ao configurar realtime de notificações de atendimentos:', error);

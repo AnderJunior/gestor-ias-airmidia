@@ -4,6 +4,8 @@ export const ROUTES = {
   ATENDIMENTO: '/atendimento',
   MENSAGENS: '/mensagens',
   CONFIGURACOES: '/configuracoes',
+  ADMIN_DASHBOARD: '/admin/dashboard',
+  ADMIN_CLIENTES: '/admin/clientes',
 } as const;
 
 export const STATUS_OPTIONS = [

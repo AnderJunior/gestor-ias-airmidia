@@ -14,11 +14,19 @@ import { useRouter } from 'next/navigation';
 import { useAgendamentos } from '@/hooks/useAgendamentos';
 import { useAtendimentos } from '@/hooks/useAtendimentos';
 import { getTotalClientes } from '@/lib/api/clientes';
+import { ROUTES } from '@/lib/constants';
 
 export default function DashboardPage() {
   const router = useRouter();
   const { stats, loading } = useDashboardStats();
   const { usuario, loading: loadingUsuario } = useUsuario();
+
+  // Redirecionar administradores para o dashboard de administração
+  useEffect(() => {
+    if (!loadingUsuario && usuario?.tipo === 'administracao') {
+      router.push(ROUTES.ADMIN_DASHBOARD);
+    }
+  }, [usuario, loadingUsuario, router]);
   // Só usar tipoMarcacao quando usuario estiver carregado, senão undefined para evitar busca prematura
   const tipoMarcacao = loadingUsuario ? undefined : (usuario?.tipo_marcacao || 'atendimento');
   const { dados: dadosPorMes, loading: loadingDadosPorMes } = useDadosPorMes(tipoMarcacao, 6);
@@ -61,6 +69,15 @@ export default function DashboardPage() {
       window.dispatchEvent(new CustomEvent('openAtendimento', { detail: { atendimentoId: id } }));
     }, 100);
   };
+
+  // Não renderizar nada se for administrador (será redirecionado)
+  if (usuario?.tipo === 'administracao') {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
 
   if (loading && tipoMarcacao === 'atendimento') {
     return (

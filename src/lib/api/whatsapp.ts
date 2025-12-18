@@ -245,22 +245,54 @@ export async function getConnectedInstances(userId?: string): Promise<WhatsAppIn
 /**
  * Busca uma instância WhatsApp pelo instance_name
  */
-export async function getWhatsAppInstanceByInstanceName(instanceName: string): Promise<WhatsAppInstance | null> {
-  const { data, error } = await supabase
+export async function getWhatsAppInstanceByInstanceName(instanceName: string, userId?: string): Promise<WhatsAppInstance | null> {
+  let query = supabase
     .from('whatsapp_instances')
     .select('*')
-    .eq('instance_name', instanceName)
-    .single();
+    .eq('instance_name', instanceName);
+
+  if (userId) {
+    query = query.eq('usuario_id', userId);
+  }
+
+  const { data, error } = await query.single();
 
   if (error) {
     if (error.code === 'PGRST116') {
+      // Nenhum registro encontrado
       return null;
     }
-    console.error('Error fetching WhatsApp instance by instance name:', error);
+    console.error('Error fetching WhatsApp instance by instance_name:', error);
     return null;
   }
 
   return data;
+}
+
+/**
+ * Busca o instance_name da primeira instância do usuário
+ * Retorna null se não encontrar nenhuma instância
+ */
+export async function getInstanceNameByUsuario(userId?: string): Promise<string | null> {
+  let finalUserId = userId;
+  
+  // Se não forneceu userId, buscar do auth
+  if (!finalUserId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return null;
+    }
+    finalUserId = user.id;
+  }
+
+  const instances = await getWhatsAppInstances(finalUserId);
+  
+  if (instances.length === 0) {
+    return null;
+  }
+
+  // Retornar o instance_name da primeira instância
+  return instances[0].instance_name || null;
 }
 
 /**

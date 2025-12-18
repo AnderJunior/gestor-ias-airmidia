@@ -6,7 +6,11 @@ import {
   Unlock, 
   Settings, 
   Mail,
-  Calendar
+  Calendar,
+  Users,
+  TestTube,
+  Rocket,
+  Shield
 } from 'lucide-react';
 import React from 'react';
 
@@ -47,5 +51,21 @@ export function MessageIcon({ className = 'w-6 h-6', strokeWidth = 2, size, colo
 
 export function CalendarIcon({ className = 'w-5 h-5', strokeWidth = 2, size, color }: IconProps) {
   return <Calendar className={className} strokeWidth={strokeWidth} size={size} color={color} />;
+}
+
+export function UsersIcon({ className = 'w-5 h-5', strokeWidth = 2, size, color }: IconProps) {
+  return <Users className={className} strokeWidth={strokeWidth} size={size} color={color} />;
+}
+
+export function TestTubeIcon({ className = 'w-5 h-5', strokeWidth = 2, size, color }: IconProps) {
+  return <TestTube className={className} strokeWidth={strokeWidth} size={size} color={color} />;
+}
+
+export function RocketIcon({ className = 'w-5 h-5', strokeWidth = 2, size, color }: IconProps) {
+  return <Rocket className={className} strokeWidth={strokeWidth} size={size} color={color} />;
+}
+
+export function ShieldIcon({ className = 'w-5 h-5', strokeWidth = 2, size, color }: IconProps) {
+  return <Shield className={className} strokeWidth={strokeWidth} size={size} color={color} />;
 }
 
