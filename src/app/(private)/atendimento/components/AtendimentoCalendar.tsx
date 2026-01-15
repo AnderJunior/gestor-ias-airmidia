@@ -14,28 +14,29 @@ interface AtendimentoCalendarProps {
   onSelectAgendamento?: (agendamentoId: string) => void
 }
 
+type Filters = {
+  agendamentos: boolean
+}
+
 export function AtendimentoCalendar({ agendamentos, loading, onSelectAgendamento }: AtendimentoCalendarProps) {
-  const router = useRouter();
+  const router = useRouter()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('monthly')
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<Filters>({
     agendamentos: true,
   })
 
-  // Converter agendamentos para eventos do calendário
   const events = useMemo<CalendarEvent[]>(() => {
     if (!filters.agendamentos) return []
 
     return agendamentos.map((agendamento) => {
-      // Usar data_e_hora como data do evento
       const eventDate = new Date(agendamento.data_e_hora)
-      
-      // Cor baseada no status do agendamento
-      const statusColors = {
-        agendado: '#3B82F6', // blue-500
-        confirmado: '#10B981', // green-500
-        cancelado: '#EF4444', // red-500
-        concluido: '#6B7280', // gray-500
+
+      const statusColors: Record<string, string> = {
+        agendado: '#3B82F6',
+        confirmado: '#10B981',
+        cancelado: '#EF4444',
+        concluido: '#6B7280',
       }
       const color = statusColors[agendamento.status] || '#3B82F6'
 
@@ -45,27 +46,21 @@ export function AtendimentoCalendar({ agendamentos, loading, onSelectAgendamento
         title: agendamento.cliente_nome || agendamento.telefone_cliente || 'Agendamento',
         date: eventDate,
         color,
-        data: {
-          agendamento,
-        },
+        data: { agendamento },
       }
     })
   }, [agendamentos, filters.agendamentos])
 
-  const handleDateChange = (date: Date) => {
-    setCurrentDate(date)
-  }
+  const handleDateChange = (date: Date) => setCurrentDate(date)
 
-  const handleFiltersChange = (newFilters: { atendimentos: boolean }) => {
+  const handleFiltersChange = (newFilters: Filters) => {
     setFilters(newFilters)
   }
 
   const handleEventClick = (event: CalendarEvent) => {
-    // Obter o agendamento do evento
-    const agendamento = event.data?.agendamento as Agendamento | undefined;
+    const agendamento = event.data?.agendamento as Agendamento | undefined
     if (agendamento?.cliente_id) {
-      // Navegar para a página de mensagens com o cliente_id
-      router.push(`/mensagens?cliente_id=${agendamento.cliente_id}`);
+      router.push(`/mensagens?cliente_id=${agendamento.cliente_id}`)
     } else if (onSelectAgendamento) {
       onSelectAgendamento(event.id)
     }
