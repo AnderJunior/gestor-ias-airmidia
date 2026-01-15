@@ -20,6 +20,7 @@ export function useWhatsAppInstances() {
       return;
     }
 
+    const userId = user.id; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function setupRealtime() {
@@ -27,7 +28,7 @@ export function useWhatsAppInstances() {
         setLoading(true);
         
         // Carregar instâncias iniciais
-        const data = await getWhatsAppInstances(user.id);
+        const data = await getWhatsAppInstances(userId);
         if (!isMounted) return;
         
         setInstances(data);
@@ -40,21 +41,21 @@ export function useWhatsAppInstances() {
 
         // Criar subscription para mudanças na tabela whatsapp_instances
         const channel = supabase
-          .channel(`whatsapp-instances:${user.id}`)
+          .channel(`whatsapp-instances:${userId}`)
           .on(
             'postgres_changes',
             {
               event: '*', // Escutar INSERT, UPDATE, DELETE
               schema: 'public',
               table: 'whatsapp_instances',
-              filter: `usuario_id=eq.${user.id}`,
+              filter: `usuario_id=eq.${userId}`,
             },
             async (payload) => {
               if (!isMounted) return;
 
               // Recarregar instâncias quando houver mudanças
               try {
-                const updatedData = await getWhatsAppInstances(user.id);
+                const updatedData = await getWhatsAppInstances(userId);
                 if (isMounted) {
                   setInstances(updatedData);
                 }
@@ -92,9 +93,10 @@ export function useWhatsAppInstances() {
     error,
     refetch: async () => {
       if (!user?.id) return;
+      const userId = user.id; // Capturar valor para garantir tipo não-null
       setLoading(true);
       try {
-        const data = await getWhatsAppInstances(user.id);
+        const data = await getWhatsAppInstances(userId);
         setInstances(data);
       } catch (err) {
         setError(err instanceof Error ? err : new Error('Erro ao recarregar instâncias'));
@@ -118,6 +120,7 @@ export function useConnectedInstances() {
       return;
     }
 
+    const userId = user.id; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function setupRealtime() {
@@ -125,7 +128,7 @@ export function useConnectedInstances() {
         setLoading(true);
         
         // Carregar instâncias conectadas iniciais
-        const data = await getConnectedInstances(user.id);
+        const data = await getConnectedInstances(userId);
         if (!isMounted) return;
         
         setInstances(data);
@@ -139,14 +142,14 @@ export function useConnectedInstances() {
         // Criar subscription para mudanças na tabela whatsapp_instances
         // Filtrar apenas instâncias conectadas do usuário
         const channel = supabase
-          .channel(`connected-instances:${user.id}`)
+          .channel(`connected-instances:${userId}`)
           .on(
             'postgres_changes',
             {
               event: '*', // Escutar INSERT, UPDATE, DELETE
               schema: 'public',
               table: 'whatsapp_instances',
-              filter: `usuario_id=eq.${user.id}`,
+              filter: `usuario_id=eq.${userId}`,
             },
             async (payload) => {
               if (!isMounted) return;
@@ -161,7 +164,7 @@ export function useConnectedInstances() {
               
               if (statusChanged || isInsert) {
                 try {
-                  const updatedData = await getConnectedInstances(user.id);
+                  const updatedData = await getConnectedInstances(userId);
                   if (isMounted) {
                     setInstances(updatedData);
                   }
@@ -200,9 +203,10 @@ export function useConnectedInstances() {
     error,
     refetch: async () => {
       if (!user?.id) return;
+      const userId = user.id; // Capturar valor para garantir tipo não-null
       setLoading(true);
       try {
-        const data = await getConnectedInstances(user.id);
+        const data = await getConnectedInstances(userId);
         setInstances(data);
       } catch (err) {
         setError(err instanceof Error ? err : new Error('Erro ao recarregar instâncias conectadas'));
