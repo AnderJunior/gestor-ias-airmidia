@@ -64,9 +64,8 @@ export function useMensagensPorCliente(clienteId: string | null) {
               // Recarregar mensagens quando houver mudanças relevantes
               try {
                 const updatedData = await getMensagensByCliente(currentClienteId, userId);
-                  if (isMounted) {
-                    setMensagens(updatedData);
-                  }
+                if (isMounted) {
+                  setMensagens(updatedData);
                 }
               } catch (err) {
                 console.error('Erro ao atualizar mensagens via realtime:', err);
