@@ -19,6 +19,7 @@ export function useUsuario() {
       return;
     }
 
+    const userId = user.id; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function setupRealtime() {
@@ -26,7 +27,7 @@ export function useUsuario() {
         setLoading(true);
         
         // Carregar dados iniciais
-        const data = await getUsuario(user.id);
+        const data = await getUsuario(userId);
         if (!isMounted) return;
         
         setUsuario(data);
@@ -39,7 +40,7 @@ export function useUsuario() {
 
         // Criar subscription para mudanças na tabela usuarios
         const channel = supabase
-          .channel(`usuario:${user.id}`, {
+          .channel(`usuario:${userId}`, {
             config: {
               broadcast: { self: true },
             },
@@ -50,14 +51,14 @@ export function useUsuario() {
               event: '*', // Escutar INSERT, UPDATE, DELETE
               schema: 'public',
               table: 'usuarios',
-              filter: `id=eq.${user.id}`,
+              filter: `id=eq.${userId}`,
             },
             async (payload) => {
               if (!isMounted) return;
 
               // Recarregar dados do usuário quando houver mudanças
               try {
-                const updatedData = await getUsuario(user.id);
+                const updatedData = await getUsuario(userId);
                 if (isMounted) {
                   setUsuario(updatedData);
                 }
