@@ -12,6 +12,8 @@ export interface MensagemConversa {
   remetente: string;
   created_at?: string;
   data_e_hora?: string;
+  base64_audio?: string | null;
+  base64_imagem?: string | null;
 }
 
 /**

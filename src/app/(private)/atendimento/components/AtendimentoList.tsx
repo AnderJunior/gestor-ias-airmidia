@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Atendimento, StatusAtendimento, Agendamento, StatusAgendamento } from '@/types/domain';
 import { formatSolicitadoEm } from '@/lib/utils/dates';
 import { Pagination } from '@/components/ui/Pagination';
@@ -11,6 +12,7 @@ import { Eye, Trash2 } from 'lucide-react';
 import { StatusDropdown } from '@/components/ui/StatusDropdown';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+import { filterWhatsAppUrl } from '@/lib/utils/images';
 
 interface AtendimentoListProps {
   atendimentos?: Atendimento[];
@@ -37,6 +39,7 @@ export function AtendimentoList({
   onRefresh,
   tipoMarcacao = 'atendimento',
 }: AtendimentoListProps) {
+  const router = useRouter();
   const [currentPage, setCurrentPage] = useState(1);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -314,10 +317,10 @@ export function AtendimentoList({
         </div>
       </Modal>
 
-      <div className="w-full">
-        <div className="bg-white overflow-hidden rounded-t-xl">
+      <div className="w-full flex flex-col" style={{ height: '100%', minHeight: 0 }}>
+        <div className="bg-white rounded-t-xl flex-1 overflow-y-auto" style={{ minHeight: 0 }}>
         <table className="w-full" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr>
               <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50 rounded-tl-xl">Nome do Cliente</th>
               <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Telefone</th>
@@ -345,14 +348,17 @@ export function AtendimentoList({
               return (
                 <tr
                   key={itemData.id}
-                  onClick={() => onSelectAtendimento(itemData.id)}
+                  onClick={() => {
+                    // Navegar para a página de mensagens com o cliente_id
+                    router.push(`/mensagens?cliente_id=${clienteId}`);
+                  }}
                   className="hover:bg-gray-50 transition-colors cursor-pointer"
                 >
                   <td className="px-6 py-4 text-sm text-gray-900 font-bold">
                     <div className="flex items-center gap-3">
-                      {clienteFoto ? (
+                      {filterWhatsAppUrl(clienteFoto) ? (
                         <img
-                          src={clienteFoto}
+                          src={filterWhatsAppUrl(clienteFoto)!}
                           alt={clienteNome || 'Cliente'}
                           className="w-10 h-10 rounded-full object-cover flex-shrink-0 border border-gray-200"
                         />
@@ -421,11 +427,13 @@ export function AtendimentoList({
       </div>
 
       {totalPages > 1 && (
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-        />
+        <div className="flex-shrink-0 pt-4">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
+        </div>
       )}
       </div>
     </>

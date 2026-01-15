@@ -88,13 +88,71 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Excluir usuário do Auth (isso também excluirá o registro na tabela usuarios devido ao CASCADE)
+    // Excluir todos os dados relacionados antes de excluir o usuário
+    // Ordem: agendamentos -> atendimentos_solicitado -> clientes -> whatsapp_instances -> usuarios (via Auth)
+    
+    // 1. Excluir agendamentos do usuário
+    const { error: agendamentosError } = await supabaseAdmin
+      .from('agendamentos')
+      .delete()
+      .eq('usuario_id', clienteId);
+    
+    if (agendamentosError) {
+      console.error('Erro ao excluir agendamentos:', agendamentosError);
+    }
+
+    // 2. Excluir atendimentos_solicitado do usuário
+    const { error: atendimentosError } = await supabaseAdmin
+      .from('atendimentos_solicitado')
+      .delete()
+      .eq('usuario_id', clienteId);
+    
+    if (atendimentosError) {
+      console.error('Erro ao excluir atendimentos:', atendimentosError);
+    }
+
+    // 3. Excluir clientes do usuário
+    const { error: clientesError } = await supabaseAdmin
+      .from('clientes')
+      .delete()
+      .eq('usuario_id', clienteId);
+    
+    if (clientesError) {
+      console.error('Erro ao excluir clientes:', clientesError);
+    }
+
+    // 4. Excluir whatsapp_instances do usuário
+    const { error: whatsappError } = await supabaseAdmin
+      .from('whatsapp_instances')
+      .delete()
+      .eq('usuario_id', clienteId);
+    
+    if (whatsappError) {
+      console.error('Erro ao excluir instâncias WhatsApp:', whatsappError);
+    }
+
+    // 5. Excluir usuário do Auth (isso também excluirá o registro na tabela usuarios devido ao CASCADE)
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(clienteId);
 
     if (deleteError) {
       console.error('Erro ao excluir usuário:', deleteError);
+      
+      // Traduzir mensagens de erro comuns do Supabase
+      let errorMessage = 'Erro ao excluir cliente';
+      const errorMsg = deleteError.message?.toLowerCase() || '';
+      
+      if (errorMsg.includes('database error') || errorMsg.includes('database_error')) {
+        errorMessage = 'Erro no banco de dados ao excluir o usuário. Verifique se não há dados relacionados que precisam ser removidos primeiro.';
+      } else if (errorMsg.includes('permission') || errorMsg.includes('forbidden')) {
+        errorMessage = 'Sem permissão para excluir este usuário.';
+      } else if (errorMsg.includes('not found')) {
+        errorMessage = 'Usuário não encontrado.';
+      } else if (deleteError.message) {
+        errorMessage = deleteError.message;
+      }
+      
       return NextResponse.json(
-        { error: deleteError.message || 'Erro ao excluir cliente' },
+        { error: errorMessage },
         { status: 500 }
       );
     }
@@ -108,8 +166,23 @@ export async function DELETE(request: NextRequest) {
     );
   } catch (error: any) {
     console.error('Erro ao excluir cliente:', error);
+    
+    // Traduzir mensagens de erro comuns
+    let errorMessage = 'Erro interno do servidor';
+    const errorMsg = error.message?.toLowerCase() || '';
+    
+    if (errorMsg.includes('database error') || errorMsg.includes('database_error')) {
+      errorMessage = 'Erro no banco de dados ao excluir o usuário. Verifique se não há dados relacionados que precisam ser removidos primeiro.';
+    } else if (errorMsg.includes('permission') || errorMsg.includes('forbidden')) {
+      errorMessage = 'Sem permissão para excluir este usuário.';
+    } else if (errorMsg.includes('not found')) {
+      errorMessage = 'Usuário não encontrado.';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
     return NextResponse.json(
-      { error: error.message || 'Erro interno do servidor' },
+      { error: errorMessage },
       { status: 500 }
     );
   }

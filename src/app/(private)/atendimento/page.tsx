@@ -90,7 +90,9 @@ export default function AtendimentoPage() {
       <Tabs tabs={tabs} activeTab={activeTab} onTabChange={(tabId) => setActiveTab(tabId as TabType)} />
 
       <div 
-        className="bg-white border-l border-r border-b border-gray-300 flex-1 overflow-auto"
+        className={`bg-white border-l border-r border-b border-gray-300 flex-1 ${
+          activeTab === 'lista' ? 'overflow-hidden' : 'overflow-auto'
+        }`}
         style={{
           borderTop: 'none',
           borderBottomLeftRadius: '12px',

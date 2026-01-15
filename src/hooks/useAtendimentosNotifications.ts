@@ -6,6 +6,7 @@ import { getConnectedInstances } from '@/lib/api/whatsapp';
 import { getAtendimentos } from '@/lib/api/atendimentos';
 import { supabase } from '@/lib/supabaseClient';
 import { playNotificationSound } from '@/utils/audio';
+import { requestNotificationPermission, showAtendimentoNotification } from '@/utils/notifications';
 
 /**
  * Hook global para escutar novos atendimentos e tocar som de notificação
@@ -24,6 +25,15 @@ export function useAtendimentosNotifications() {
     }
 
     let isMounted = true;
+
+    // Solicitar permissão de notificações quando o hook for montado
+    requestNotificationPermission().then((permission) => {
+      if (permission === 'granted') {
+        console.log('Permissão de notificações concedida');
+      } else {
+        console.warn('Permissão de notificações não concedida:', permission);
+      }
+    });
 
     async function setupRealtime() {
       try {
@@ -96,6 +106,22 @@ export function useAtendimentosNotifications() {
                 }
               }
 
+              // Verificar se o atendimento é para o usuário atual
+              const atendimentoUsuarioId = payload.new?.usuario_id;
+              const isForCurrentUser = atendimentoUsuarioId === user.id;
+
+              console.log('Verificando se atendimento é para o usuário atual:', {
+                atendimentoUsuarioId,
+                currentUserId: user.id,
+                isForCurrentUser
+              });
+
+              // Se não for para o usuário atual, ignorar
+              if (!isForCurrentUser) {
+                console.log('Atendimento não é para o usuário atual. Ignorando notificação.');
+                return;
+              }
+
               // Recarregar atendimentos quando houver mudanças relevantes
               try {
                 const previousIds = new Set(previousAtendimentosIdsRef.current);
@@ -110,14 +136,23 @@ export function useAtendimentosNotifications() {
                   console.log('IDs atuais:', Array.from(currentIds));
                   console.log('Novos IDs detectados:', newIds);
                   
-                  // Se for um INSERT ou se detectamos novos IDs, tocar som
+                  // Se for um INSERT ou se detectamos novos IDs, tocar som e exibir notificação
                   if (payload.eventType === 'INSERT' || newIds.length > 0) {
-                    console.log('Novo atendimento detectado! Tocando som...', {
+                    // Buscar informações do novo atendimento para a notificação
+                    const novoAtendimento = updatedData.find(a => newIds.includes(a.id));
+                    const clienteNome = novoAtendimento?.cliente_nome || 'Cliente';
+
+                    console.log('Novo atendimento detectado para o usuário atual!', {
                       eventType: payload.eventType,
                       newIds,
+                      clienteNome,
                       payload: payload.new
                     });
-                    // Tocar som 2 vezes quando um novo atendimento for adicionado
+
+                    // Exibir notificação do navegador (funciona mesmo com página inativa)
+                    showAtendimentoNotification(clienteNome, novoAtendimento?.id);
+
+                    // Tocar som (tentará tocar, mesmo se falhar, a notificação já foi exibida)
                     playNotificationSound();
                   } else {
                     console.log('Nenhum novo atendimento detectado. Não tocando som.');

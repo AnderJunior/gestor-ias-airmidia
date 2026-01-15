@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Atendimento, Agendamento } from '@/types/domain';
 import { formatTimeAgo } from '@/lib/utils/dates';
 import { updateAtendimentoStatus } from '@/lib/api/atendimentos';
@@ -8,6 +9,7 @@ import { updateAgendamentoStatus } from '@/lib/api/agendamentos';
 import { Phone, MoreVertical } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+import { filterWhatsAppUrl } from '@/lib/utils/images';
 
 interface AtendimentoKanbanProps {
   atendimentos?: Atendimento[];
@@ -48,6 +50,7 @@ export function AtendimentoKanban({
   onStatusUpdate,
   tipoMarcacao = 'atendimento',
 }: AtendimentoKanbanProps) {
+  const router = useRouter();
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [draggedItemStatus, setDraggedItemStatus] = useState<KanbanStatus | 'aberto' | 'confirmado' | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
@@ -323,7 +326,7 @@ export function AtendimentoKanban({
         </div>
       </Modal>
 
-      <div className="flex gap-6 overflow-x-auto h-full pb-4">
+      <div className="flex gap-6 overflow-x-auto pb-4">
         {columns.map((column) => {
         const columnItems = dadosPorStatus[column.id as keyof typeof dadosPorStatus] || [];
         const clientCount = columnItems.length;
@@ -347,7 +350,7 @@ export function AtendimentoKanban({
         return (
           <div
             key={column.id}
-            className={`flex-shrink-0 w-80 h-full bg-white rounded-lg shadow-sm border-l border-r border-b border-gray-50 transition-all flex flex-col ${
+            className={`flex-shrink-0 w-80 bg-white rounded-lg shadow-sm border-l border-r border-b border-gray-50 transition-all flex flex-col ${
               isDragOver && canDropHere ? 'bg-blue-50 border-[#9a9a9a] border-opacity-50 shadow-md' : ''
             }`}
             style={{ borderTopWidth: '4px', borderTopStyle: 'solid', borderTopColor: column.borderColor }}
@@ -370,7 +373,7 @@ export function AtendimentoKanban({
             </div>
 
             {/* Cards */}
-            <div className="p-4 space-y-3 flex-1 overflow-y-auto">
+            <div className="p-4 space-y-3">
               {columnItems.length === 0 ? (
                 <div className="border-2 border-dashed border-gray-200 rounded-lg py-12 text-center">
                   <span className="text-gray-400 text-sm">
@@ -407,20 +410,23 @@ export function AtendimentoKanban({
                         setDraggedItemStatus(null);
                         setDragOverColumn(null);
                       }}
-                      onClick={() => onSelectAtendimento(item.id)}
+                      onClick={() => {
+                        // Navegar para a página de mensagens com o cliente_id
+                        router.push(`/mensagens?cliente_id=${clienteId}`);
+                      }}
                       className={`
                         bg-white border border-gray-200 rounded-lg p-4 transition-all
                         ${isDragging ? 'opacity-50 cursor-grabbing' : ''}
-                        ${isUpdating ? 'opacity-50 cursor-wait' : 'cursor-grab hover:shadow-md'}
+                        ${isUpdating ? 'opacity-50 cursor-wait' : 'cursor-pointer hover:shadow-md'}
                         ${!isUpdating && canDrag ? 'hover:border-gray-400' : 'cursor-not-allowed opacity-60'}
                       `}
                     >
                       {/* Primeira linha: Foto Cliente | Nome | Ícone WhatsApp */}
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-3 flex-1 min-w-0">
-                          {clienteFoto ? (
+                          {filterWhatsAppUrl(clienteFoto) ? (
                             <img
-                              src={clienteFoto}
+                              src={filterWhatsAppUrl(clienteFoto)!}
                               alt={clienteNome || 'Cliente'}
                               className="w-10 h-10 rounded-full object-cover flex-shrink-0 border border-gray-200"
                             />
