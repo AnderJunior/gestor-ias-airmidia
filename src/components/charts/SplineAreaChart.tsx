@@ -62,7 +62,6 @@ export function SplineAreaChart({ data, title, color = '#22c55e', tipoMarcacao =
     colors: [color],
     xaxis: {
       categories: categories,
-      reversed: false, // Garantir que a ordem não seja invertida (mais antigo à esquerda, mais recente à direita)
       labels: {
         style: {
           colors: '#6b7280',
