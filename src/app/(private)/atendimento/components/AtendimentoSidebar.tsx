@@ -44,12 +44,16 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
     let isMounted = true;
 
     async function setupRealtime() {
+      if (!atendimentoId) return;
+      
+      const currentAtendimentoId = atendimentoId; // Capturar valor para garantir tipo não-null
+      
       try {
         setLoading(true);
 
         if (isAgendamento) {
           // Carregar agendamento inicial
-          const data = await getAgendamentoById(atendimentoId);
+          const data = await getAgendamentoById(currentAtendimentoId);
           if (!isMounted) return;
 
           setAgendamento(data);
@@ -65,14 +69,14 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
 
           // Criar subscription para mudanças neste agendamento específico
           const channel = supabase
-            .channel(`agendamento-sidebar:${atendimentoId}`)
+            .channel(`agendamento-sidebar:${currentAtendimentoId}`)
             .on(
               'postgres_changes',
               {
                 event: '*', // Escutar INSERT, UPDATE, DELETE
                 schema: 'public',
                 table: 'agendamentos',
-                filter: `id=eq.${atendimentoId}`,
+                filter: `id=eq.${currentAtendimentoId}`,
               },
               async (payload) => {
                 if (!isMounted) return;
@@ -88,7 +92,7 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
 
                 // Recarregar agendamento quando houver mudanças
                 try {
-                  const updatedData = await getAgendamentoById(atendimentoId);
+                  const updatedData = await getAgendamentoById(currentAtendimentoId);
                   if (isMounted) {
                     setAgendamento(updatedData);
                   }
@@ -113,7 +117,7 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
 
                 // Recarregar agendamento quando dados do cliente mudarem
                 try {
-                  const updatedData = await getAgendamentoById(atendimentoId);
+                  const updatedData = await getAgendamentoById(currentAtendimentoId);
                   if (isMounted) {
                     setAgendamento(updatedData);
                   }
@@ -129,7 +133,7 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
           channelRef.current = channel;
         } else {
           // Carregar atendimento inicial
-          const data = await getAtendimentoById(atendimentoId);
+          const data = await getAtendimentoById(currentAtendimentoId);
           if (!isMounted) return;
 
           setAtendimento(data);
@@ -145,14 +149,14 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
 
           // Criar subscription para mudanças neste atendimento específico
           const channel = supabase
-            .channel(`atendimento-sidebar:${atendimentoId}`)
+            .channel(`atendimento-sidebar:${currentAtendimentoId}`)
             .on(
               'postgres_changes',
               {
                 event: '*', // Escutar INSERT, UPDATE, DELETE
                 schema: 'public',
                 table: 'atendimentos_solicitado',
-                filter: `id=eq.${atendimentoId}`,
+                filter: `id=eq.${currentAtendimentoId}`,
               },
               async (payload) => {
                 if (!isMounted) return;
@@ -168,7 +172,7 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
 
                 // Recarregar atendimento quando houver mudanças
                 try {
-                  const updatedData = await getAtendimentoById(atendimentoId);
+                  const updatedData = await getAtendimentoById(currentAtendimentoId);
                   if (isMounted) {
                     setAtendimento(updatedData);
                   }
@@ -193,7 +197,7 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
 
                 // Recarregar atendimento quando dados do cliente mudarem
                 try {
-                  const updatedData = await getAtendimentoById(atendimentoId);
+                  const updatedData = await getAtendimentoById(currentAtendimentoId);
                   if (isMounted) {
                     setAtendimento(updatedData);
                   }
