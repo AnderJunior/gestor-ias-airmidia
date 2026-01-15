@@ -7,3 +7,4 @@ DROP INDEX IF EXISTS public.idx_mensagens_base64_audio;
 DROP INDEX IF EXISTS public.idx_mensagens_base64_imagem;
 
 
+
