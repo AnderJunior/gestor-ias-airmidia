@@ -1,5 +1,7 @@
 import { supabase } from '../supabaseClient';
 import { getConnectedInstances } from './whatsapp';
+import { Mensagem } from '@/types/domain';
+import { getAtendimentoById } from './atendimentos';
 
 /**
  * Interface para mensagem baseada na estrutura real da tabela
@@ -56,6 +58,43 @@ export async function getMensagensByCliente(clienteId: string, userId?: string):
     }
     
     console.error('Error fetching mensagens:', mensagensError);
+    throw mensagensError;
+  }
+
+  return mensagens || [];
+}
+
+/**
+ * Busca todas as mensagens de um atendimento
+ * @param atendimentoId - ID do atendimento
+ */
+export async function getMensagensByAtendimento(atendimentoId: string): Promise<Mensagem[]> {
+  // Buscar todas as mensagens do atendimento
+  // Ordenar por data_e_hora se existir, senão usar created_at
+  const { data: mensagens, error: mensagensError } = await supabase
+    .from('mensagens')
+    .select('*')
+    .eq('atendimento_id', atendimentoId)
+    .order('data_e_hora', { ascending: true });
+
+  if (mensagensError) {
+    // Se der erro por causa da coluna data_e_hora não existir, tentar com created_at
+    if (mensagensError.message.includes('data_e_hora') || mensagensError.code === '42703') {
+      const { data: mensagensRetry, error: errorRetry } = await supabase
+        .from('mensagens')
+        .select('*')
+        .eq('atendimento_id', atendimentoId)
+        .order('created_at', { ascending: true });
+      
+      if (errorRetry) {
+        console.error('Error fetching mensagens by atendimento:', errorRetry);
+        throw errorRetry;
+      }
+      
+      return mensagensRetry || [];
+    }
+    
+    console.error('Error fetching mensagens by atendimento:', mensagensError);
     throw mensagensError;
   }
 
