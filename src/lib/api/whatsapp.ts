@@ -351,9 +351,10 @@ export async function sincronizarStatusInstancia(
   qrCode?: string
 ): Promise<WhatsAppInstance> {
   // Se não forneceu usuarioId, tentar obter de forma otimizada
-  let finalUsuarioId = usuarioId;
+  let finalUsuarioId: string | undefined = usuarioId;
   if (!finalUsuarioId) {
-    finalUsuarioId = await obterUsuarioIdParaSincronizacao(instanceName, telefone);
+    const usuarioIdObtido = await obterUsuarioIdParaSincronizacao(instanceName, telefone);
+    finalUsuarioId = usuarioIdObtido || undefined;
   }
   
   if (!finalUsuarioId) {
