@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { CalendarSidebar } from '@/components/calendar/CalendarSidebar'
 import { CalendarView } from '@/components/calendar/CalendarView'
 import { CalendarEvent } from '@/types/calendar'
@@ -14,6 +15,7 @@ interface AtendimentoCalendarProps {
 }
 
 export function AtendimentoCalendar({ agendamentos, loading, onSelectAgendamento }: AtendimentoCalendarProps) {
+  const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date())
   const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('monthly')
   const [filters, setFilters] = useState({
@@ -59,7 +61,12 @@ export function AtendimentoCalendar({ agendamentos, loading, onSelectAgendamento
   }
 
   const handleEventClick = (event: CalendarEvent) => {
-    if (onSelectAgendamento) {
+    // Obter o agendamento do evento
+    const agendamento = event.data?.agendamento as Agendamento | undefined;
+    if (agendamento?.cliente_id) {
+      // Navegar para a página de mensagens com o cliente_id
+      router.push(`/mensagens?cliente_id=${agendamento.cliente_id}`);
+    } else if (onSelectAgendamento) {
       onSelectAgendamento(event.id)
     }
   }

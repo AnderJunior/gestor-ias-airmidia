@@ -3,8 +3,11 @@ import './globals.css';
 import { AuthProvider } from '@/contexts/AuthContext';
 
 export const metadata: Metadata = {
-  title: 'Sistema Gestão IA',
+  title: 'Gestor IA - Air Midia Digital',
   description: 'Sistema de atendimento com dashboard',
+  icons: {
+    icon: '/logotipo-air-midia.webp',
+  },
 };
 
 export default function RootLayout({

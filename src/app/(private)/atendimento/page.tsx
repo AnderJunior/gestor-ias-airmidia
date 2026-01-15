@@ -8,6 +8,7 @@ import { AtendimentoSidebar } from './components/AtendimentoSidebar';
 import { useAtendimentos } from '@/hooks/useAtendimentos';
 import { useAgendamentos } from '@/hooks/useAgendamentos';
 import { useSidebar } from '@/hooks/useSidebar';
+import { useUsuario } from '@/hooks/useUsuario';
 import { Tabs } from '@/components/ui/Tabs';
 import { List, LayoutGrid, Calendar } from 'lucide-react';
 
@@ -16,8 +17,9 @@ type TabType = 'lista' | 'kanban' | 'calendario';
 export default function AtendimentoPage() {
   const [activeTab, setActiveTab] = useState<TabType>('lista');
   const { atendimentos, loading, refetch } = useAtendimentos();
-  const { agendamentos, loading: loadingAgendamentos } = useAgendamentos();
+  const { agendamentos, loading: loadingAgendamentos, refetch: refetchAgendamentos } = useAgendamentos();
   const { isOpen, selectedAtendimentoId, openSidebar, closeSidebar } = useSidebar();
+  const { usuario } = useUsuario();
 
   // Listener para abrir atendimento quando navegar via notificação
   useEffect(() => {
@@ -50,18 +52,19 @@ export default function AtendimentoPage() {
     };
   }, [atendimentos, openSidebar, refetch]);
 
-  const tabs = [
+  // Filtrar abas baseado no tipo_marcacao do usuário
+  const todasAsAbas = [
     {
       id: 'lista',
       label: 'Lista',
       icon: <List className="w-4 h-4" />,
-      badge: atendimentos.length,
+      badge: usuario?.tipo_marcacao === 'agendamento' ? agendamentos.length : atendimentos.length,
     },
     {
       id: 'kanban',
       label: 'Kanban',
       icon: <LayoutGrid className="w-4 h-4" />,
-      badge: atendimentos.length,
+      badge: usuario?.tipo_marcacao === 'agendamento' ? agendamentos.length : atendimentos.length,
     },
     {
       id: 'calendario',
@@ -70,12 +73,26 @@ export default function AtendimentoPage() {
     },
   ];
 
+  // Se tipo_marcacao for "atendimento", ocultar a aba "Calendário"
+  const tabs = usuario?.tipo_marcacao === 'atendimento'
+    ? todasAsAbas.filter(tab => tab.id !== 'calendario')
+    : todasAsAbas;
+
+  // Se a aba ativa for "calendario" e o usuário for "atendimento", mudar para "lista"
+  useEffect(() => {
+    if (usuario?.tipo_marcacao === 'atendimento' && activeTab === 'calendario') {
+      setActiveTab('lista');
+    }
+  }, [usuario?.tipo_marcacao, activeTab]);
+
   return (
     <div className="flex flex-col h-full">
       <Tabs tabs={tabs} activeTab={activeTab} onTabChange={(tabId) => setActiveTab(tabId as TabType)} />
 
       <div 
-        className="bg-white border-l border-r border-b border-gray-300 flex-1 overflow-auto"
+        className={`bg-white border-l border-r border-b border-gray-300 flex-1 ${
+          activeTab === 'lista' ? 'overflow-hidden' : 'overflow-auto'
+        }`}
         style={{
           borderTop: 'none',
           borderBottomLeftRadius: '12px',
@@ -86,25 +103,27 @@ export default function AtendimentoPage() {
       >
         {activeTab === 'lista' ? (
           <AtendimentoList
-            atendimentos={atendimentos}
-            loading={loading}
+            atendimentos={usuario?.tipo_marcacao === 'agendamento' ? undefined : atendimentos}
+            agendamentos={usuario?.tipo_marcacao === 'agendamento' ? agendamentos : undefined}
+            loading={usuario?.tipo_marcacao === 'agendamento' ? loadingAgendamentos : loading}
             onSelectAtendimento={openSidebar}
+            onRefresh={usuario?.tipo_marcacao === 'agendamento' ? refetchAgendamentos : refetch}
+            tipoMarcacao={usuario?.tipo_marcacao}
           />
         ) : activeTab === 'kanban' ? (
           <AtendimentoKanban
-            atendimentos={atendimentos}
-            loading={loading}
+            atendimentos={usuario?.tipo_marcacao === 'agendamento' ? undefined : atendimentos}
+            agendamentos={usuario?.tipo_marcacao === 'agendamento' ? agendamentos : undefined}
+            loading={usuario?.tipo_marcacao === 'agendamento' ? loadingAgendamentos : loading}
             onSelectAtendimento={openSidebar}
-            onStatusUpdate={refetch}
+            onStatusUpdate={usuario?.tipo_marcacao === 'agendamento' ? refetchAgendamentos : refetch}
+            tipoMarcacao={usuario?.tipo_marcacao}
           />
         ) : (
           <AtendimentoCalendar
             agendamentos={agendamentos}
             loading={loadingAgendamentos}
-            onSelectAgendamento={(agendamentoId) => {
-              // Por enquanto, apenas logar. Você pode criar um sidebar específico para agendamentos depois
-              console.log('Agendamento selecionado:', agendamentoId);
-            }}
+            onSelectAgendamento={openSidebar}
           />
         )}
       </div>
@@ -113,6 +132,7 @@ export default function AtendimentoPage() {
         atendimentoId={selectedAtendimentoId}
         isOpen={isOpen}
         onClose={closeSidebar}
+        onRefresh={usuario?.tipo_marcacao === 'agendamento' ? refetchAgendamentos : refetch}
       />
     </div>
   );

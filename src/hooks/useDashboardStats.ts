@@ -15,6 +15,7 @@ export function useDashboardStats() {
   const [error, setError] = useState<Error | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const instanceIdsRef = useRef<string[]>([]);
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (!user?.id) {
@@ -71,15 +72,24 @@ export function useDashboardStats() {
                 return; // Ignorar mudanças de outras instâncias
               }
 
-              // Recarregar estatísticas quando houver mudanças relevantes
-              try {
-                const updatedData = await getDashboardStats(user.id);
-                if (isMounted) {
-                  setStats(updatedData);
-                }
-              } catch (err) {
-                console.error('Erro ao atualizar estatísticas via realtime:', err);
+              // Debounce para evitar múltiplas requisições rápidas
+              if (debounceTimeoutRef.current) {
+                clearTimeout(debounceTimeoutRef.current);
               }
+
+              debounceTimeoutRef.current = setTimeout(async () => {
+                if (!isMounted) return;
+                
+                // Recarregar estatísticas quando houver mudanças relevantes
+                try {
+                  const updatedData = await getDashboardStats(user.id);
+                  if (isMounted) {
+                    setStats(updatedData);
+                  }
+                } catch (err) {
+                  console.error('Erro ao atualizar estatísticas via realtime:', err);
+                }
+              }, 500);
             }
           )
           // Escutar mudanças na tabela whatsapp_instances (quando status muda, pode afetar estatísticas)
@@ -112,13 +122,7 @@ export function useDashboardStats() {
               }
             }
           )
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              console.log('Subscrito ao realtime de estatísticas do dashboard');
-            } else if (status === 'CHANNEL_ERROR') {
-              console.error('Erro na subscription de estatísticas');
-            }
-          });
+          .subscribe();
 
         channelRef.current = channel;
       } catch (err) {
@@ -134,6 +138,9 @@ export function useDashboardStats() {
     // Cleanup: remover subscription quando o componente desmontar ou user.id mudar
     return () => {
       isMounted = false;
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;

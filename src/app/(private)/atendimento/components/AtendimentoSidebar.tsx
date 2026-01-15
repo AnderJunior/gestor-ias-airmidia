@@ -4,9 +4,12 @@ import { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { getAtendimentoById, deleteAtendimento } from '@/lib/api/atendimentos';
+import { getAgendamentoById, deleteAgendamento } from '@/lib/api/agendamentos';
 import { supabase } from '@/lib/supabaseClient';
-import { Atendimento } from '@/types/domain';
-import { Trash2 } from 'lucide-react';
+import { Atendimento, Agendamento, StatusAgendamento } from '@/types/domain';
+import { Trash2, Calendar, Link as LinkIcon, ExternalLink } from 'lucide-react';
+import { formatDateTime } from '@/lib/utils/dates';
+import { useUsuario } from '@/hooks/useUsuario';
 
 interface AtendimentoSidebarProps {
   atendimentoId: string | null;
@@ -16,7 +19,11 @@ interface AtendimentoSidebarProps {
 }
 
 export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }: AtendimentoSidebarProps) {
+  const { usuario } = useUsuario();
+  const isAgendamento = usuario?.tipo_marcacao === 'agendamento';
+  
   const [atendimento, setAtendimento] = useState<Atendimento | null>(null);
+  const [agendamento, setAgendamento] = useState<Agendamento | null>(null);
   const [loading, setLoading] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -25,6 +32,7 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
   useEffect(() => {
     if (!isOpen || !atendimentoId) {
       setAtendimento(null);
+      setAgendamento(null);
       // Limpar subscription quando o sidebar fechar
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
@@ -39,95 +47,170 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
       try {
         setLoading(true);
 
-        // Carregar atendimento inicial
-        const data = await getAtendimentoById(atendimentoId);
-        if (!isMounted) return;
+        if (isAgendamento) {
+          // Carregar agendamento inicial
+          const data = await getAgendamentoById(atendimentoId);
+          if (!isMounted) return;
 
-        setAtendimento(data);
-        setLoading(false);
+          setAgendamento(data);
+          setLoading(false);
 
-        // Armazenar cliente_id para usar no filtro do realtime
-        const clienteId = data?.cliente_id;
+          // Armazenar cliente_id para usar no filtro do realtime
+          const clienteId = data?.cliente_id;
 
-        // Limpar subscription anterior se existir
-        if (channelRef.current) {
-          await supabase.removeChannel(channelRef.current);
+          // Limpar subscription anterior se existir
+          if (channelRef.current) {
+            await supabase.removeChannel(channelRef.current);
+          }
+
+          // Criar subscription para mudanças neste agendamento específico
+          const channel = supabase
+            .channel(`agendamento-sidebar:${atendimentoId}`)
+            .on(
+              'postgres_changes',
+              {
+                event: '*', // Escutar INSERT, UPDATE, DELETE
+                schema: 'public',
+                table: 'agendamentos',
+                filter: `id=eq.${atendimentoId}`,
+              },
+              async (payload) => {
+                if (!isMounted) return;
+
+                // Se foi deletado, fechar o sidebar
+                if (payload.eventType === 'DELETE') {
+                  if (onRefresh) {
+                    onRefresh();
+                  }
+                  onClose();
+                  return;
+                }
+
+                // Recarregar agendamento quando houver mudanças
+                try {
+                  const updatedData = await getAgendamentoById(atendimentoId);
+                  if (isMounted) {
+                    setAgendamento(updatedData);
+                  }
+                } catch (err) {
+                  console.error('Erro ao atualizar agendamento via realtime:', err);
+                }
+              }
+            );
+
+          // Escutar mudanças na tabela clientes apenas se houver cliente_id
+          if (clienteId) {
+            channel.on(
+              'postgres_changes',
+              {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'clientes',
+                filter: `id=eq.${clienteId}`,
+              },
+              async (payload) => {
+                if (!isMounted) return;
+
+                // Recarregar agendamento quando dados do cliente mudarem
+                try {
+                  const updatedData = await getAgendamentoById(atendimentoId);
+                  if (isMounted) {
+                    setAgendamento(updatedData);
+                  }
+                } catch (err) {
+                  console.error('Erro ao atualizar agendamento após mudança no cliente:', err);
+                }
+              }
+            );
+          }
+
+          channel.subscribe();
+
+          channelRef.current = channel;
+        } else {
+          // Carregar atendimento inicial
+          const data = await getAtendimentoById(atendimentoId);
+          if (!isMounted) return;
+
+          setAtendimento(data);
+          setLoading(false);
+
+          // Armazenar cliente_id para usar no filtro do realtime
+          const clienteId = data?.cliente_id;
+
+          // Limpar subscription anterior se existir
+          if (channelRef.current) {
+            await supabase.removeChannel(channelRef.current);
+          }
+
+          // Criar subscription para mudanças neste atendimento específico
+          const channel = supabase
+            .channel(`atendimento-sidebar:${atendimentoId}`)
+            .on(
+              'postgres_changes',
+              {
+                event: '*', // Escutar INSERT, UPDATE, DELETE
+                schema: 'public',
+                table: 'atendimentos_solicitado',
+                filter: `id=eq.${atendimentoId}`,
+              },
+              async (payload) => {
+                if (!isMounted) return;
+
+                // Se foi deletado, fechar o sidebar
+                if (payload.eventType === 'DELETE') {
+                  if (onRefresh) {
+                    onRefresh();
+                  }
+                  onClose();
+                  return;
+                }
+
+                // Recarregar atendimento quando houver mudanças
+                try {
+                  const updatedData = await getAtendimentoById(atendimentoId);
+                  if (isMounted) {
+                    setAtendimento(updatedData);
+                  }
+                } catch (err) {
+                  console.error('Erro ao atualizar atendimento via realtime:', err);
+                }
+              }
+            );
+
+          // Escutar mudanças na tabela clientes apenas se houver cliente_id
+          if (clienteId) {
+            channel.on(
+              'postgres_changes',
+              {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'clientes',
+                filter: `id=eq.${clienteId}`,
+              },
+              async (payload) => {
+                if (!isMounted) return;
+
+                // Recarregar atendimento quando dados do cliente mudarem
+                try {
+                  const updatedData = await getAtendimentoById(atendimentoId);
+                  if (isMounted) {
+                    setAtendimento(updatedData);
+                  }
+                } catch (err) {
+                  console.error('Erro ao atualizar atendimento após mudança no cliente:', err);
+                }
+              }
+            );
+          }
+
+          channel.subscribe();
+
+          channelRef.current = channel;
         }
-
-        // Criar subscription para mudanças neste atendimento específico
-        const channel = supabase
-          .channel(`atendimento-sidebar:${atendimentoId}`)
-          .on(
-            'postgres_changes',
-            {
-              event: '*', // Escutar INSERT, UPDATE, DELETE
-              schema: 'public',
-              table: 'atendimentos_solicitado',
-              filter: `id=eq.${atendimentoId}`,
-            },
-            async (payload) => {
-              if (!isMounted) return;
-
-              // Se foi deletado, fechar o sidebar
-              if (payload.eventType === 'DELETE') {
-                if (onRefresh) {
-                  onRefresh();
-                }
-                onClose();
-                return;
-              }
-
-              // Recarregar atendimento quando houver mudanças
-              try {
-                const updatedData = await getAtendimentoById(atendimentoId);
-                if (isMounted) {
-                  setAtendimento(updatedData);
-                }
-              } catch (err) {
-                console.error('Erro ao atualizar atendimento via realtime:', err);
-              }
-            }
-          );
-
-        // Escutar mudanças na tabela clientes apenas se houver cliente_id
-        if (clienteId) {
-          channel.on(
-            'postgres_changes',
-            {
-              event: 'UPDATE',
-              schema: 'public',
-              table: 'clientes',
-              filter: `id=eq.${clienteId}`,
-            },
-            async (payload) => {
-              if (!isMounted) return;
-
-              // Recarregar atendimento quando dados do cliente mudarem
-              try {
-                const updatedData = await getAtendimentoById(atendimentoId);
-                if (isMounted) {
-                  setAtendimento(updatedData);
-                }
-              } catch (err) {
-                console.error('Erro ao atualizar atendimento após mudança no cliente:', err);
-              }
-            }
-          );
-        }
-
-        channel
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              console.log('Subscrito ao realtime do atendimento no sidebar');
-            } else if (status === 'CHANNEL_ERROR') {
-              console.error('Erro na subscription do atendimento no sidebar');
-            }
-          });
-
-        channelRef.current = channel;
       } catch (error) {
         if (isMounted) {
-          console.error('Erro ao carregar atendimento:', error);
+          console.error('Erro ao carregar dados:', error);
           setLoading(false);
         }
       }
@@ -143,7 +226,7 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
         channelRef.current = null;
       }
     };
-  }, [isOpen, atendimentoId, onClose, onRefresh]);
+  }, [isOpen, atendimentoId, onClose, onRefresh, isAgendamento]);
 
   const handleDelete = () => {
     if (atendimentoId) {
@@ -156,15 +239,19 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
 
     setDeletingId(atendimentoId);
     try {
-      await deleteAtendimento(atendimentoId);
+      if (isAgendamento) {
+        await deleteAgendamento(atendimentoId);
+      } else {
+        await deleteAtendimento(atendimentoId);
+      }
       if (onRefresh) {
         onRefresh();
       }
       setShowDeleteModal(false);
       onClose();
     } catch (error: any) {
-      console.error('Erro ao excluir atendimento:', error);
-      const errorMessage = error?.message || 'Erro ao excluir atendimento. Tente novamente.';
+      console.error(`Erro ao excluir ${isAgendamento ? 'agendamento' : 'atendimento'}:`, error);
+      const errorMessage = error?.message || `Erro ao excluir ${isAgendamento ? 'agendamento' : 'atendimento'}. Tente novamente.`;
       alert(errorMessage);
     } finally {
       setDeletingId(null);
@@ -176,12 +263,37 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
   };
 
   const handleWhatsApp = () => {
-    if (!atendimento?.telefone_cliente) return;
+    const telefone = isAgendamento ? agendamento?.telefone_cliente : atendimento?.telefone_cliente;
+    if (!telefone) return;
     // Remove caracteres não numéricos do telefone
-    const numeroLimpo = atendimento.telefone_cliente.replace(/\D/g, '');
+    const numeroLimpo = telefone.replace(/\D/g, '');
     // Abre o WhatsApp Web/App com o número
     window.open(`https://wa.me/${numeroLimpo}`, '_blank');
   };
+
+  const getStatusLabel = (status: StatusAgendamento) => {
+    const labels = {
+      agendado: 'Agendado',
+      confirmado: 'Confirmado',
+      cancelado: 'Cancelado',
+      concluido: 'Realizado',
+    };
+    return labels[status] || status;
+  };
+
+  const getStatusColor = (status: StatusAgendamento) => {
+    const colors = {
+      agendado: 'bg-blue-100 text-blue-700',
+      confirmado: 'bg-green-100 text-green-700',
+      cancelado: 'bg-red-100 text-red-700',
+      concluido: 'bg-gray-100 text-gray-700',
+    };
+    return colors[status] || 'bg-gray-100 text-gray-700';
+  };
+
+  const itemNome = isAgendamento 
+    ? agendamento?.cliente_nome 
+    : atendimento?.cliente_nome;
 
   const WhatsAppIcon = ({ className }: { className?: string }) => (
     <svg
@@ -207,8 +319,8 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
       >
         <div className="space-y-4">
           <p className="text-gray-700">
-            Deseja realmente excluir o atendimento do lead{' '}
-            <strong>{atendimento?.cliente_nome || 'Cliente'}</strong>?
+            Deseja realmente excluir o {isAgendamento ? 'agendamento' : 'atendimento'} do lead{' '}
+            <strong>{itemNome || 'Cliente'}</strong>?
           </p>
           <p className="text-sm text-gray-500">
             Esta ação não pode ser desfeita.
@@ -242,7 +354,9 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
       <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-2xl z-50 flex flex-col">
         {/* Header */}
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900">Detalhes do Atendimento</h2>
+          <h2 className="text-xl font-semibold text-gray-900">
+            {isAgendamento ? 'Detalhes do Agendamento' : 'Detalhes do Atendimento'}
+          </h2>
           <div className="flex items-center gap-2">
             {atendimentoId && (
               <Button
@@ -250,7 +364,7 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
                 size="sm"
                 onClick={handleDelete}
                 className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                title="Excluir atendimento"
+                title={`Excluir ${isAgendamento ? 'agendamento' : 'atendimento'}`}
               >
                 <Trash2 className="w-5 h-5" />
               </Button>
@@ -267,37 +381,113 @@ export function AtendimentoSidebar({ atendimentoId, isOpen, onClose, onRefresh }
             <div className="text-center text-gray-500 py-12">
               <p>Carregando...</p>
             </div>
-          ) : atendimento ? (
+          ) : (isAgendamento ? agendamento : atendimento) ? (
             <div className="space-y-6">
-              {/* Resumo do Atendimento */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Resumo do Atendimento</h3>
-                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                  {atendimento.resumo_conversa ? (
-                    <p className="text-gray-800 whitespace-pre-wrap">{atendimento.resumo_conversa}</p>
-                  ) : (
-                    <p className="text-gray-400 italic">Nenhum resumo disponível</p>
-                  )}
-                </div>
-              </div>
+              {isAgendamento && agendamento ? (
+                <>
+                  {/* Status, Data/Hora e Resumo da Conversa */}
+                  <div className="space-y-4">
+                    {/* Status e Data/Hora lado a lado, alinhados à esquerda */}
+                    <div className="flex items-start gap-4">
+                      {/* Status do Agendamento */}
+                      <div className="flex-shrink-0">
+                        <h3 className="text-sm font-semibold text-gray-700 mb-2">Status</h3>
+                        <div className={`inline-flex items-center px-3 py-1.5 rounded-lg font-semibold text-sm ${getStatusColor(agendamento.status)}`}>
+                          {getStatusLabel(agendamento.status)}
+                        </div>
+                      </div>
 
-              {/* Botão Chamar no WhatsApp */}
-              {atendimento.telefone_cliente && (
-                <div>
-                  <Button
-                    variant="primary"
-                    onClick={handleWhatsApp}
-                    className="w-full flex items-center justify-center gap-2"
-                  >
-                    <WhatsAppIcon className="w-5 h-5" />
-                    Chamar no WhatsApp
-                  </Button>
-                </div>
+                      {/* Data e Hora Agendadas */}
+                      <div className="flex-1">
+                        <h3 className="text-sm font-semibold text-gray-700 mb-2">Data e Hora Agendadas</h3>
+                        <div className="bg-gray-50 rounded-lg p-2 border border-gray-200 flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                          <span className="text-gray-800 font-medium text-sm">
+                            {formatDateTime(agendamento.data_e_hora)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Resumo da Conversa */}
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-700 mb-2">Resumo da Conversa</h3>
+                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        {agendamento.resumo_conversa ? (
+                          <p className="text-gray-800 whitespace-pre-wrap">{agendamento.resumo_conversa}</p>
+                        ) : (
+                          <p className="text-gray-400 italic">Nenhum resumo disponível</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Link da Reunião */}
+                  {agendamento.link_agendamento && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-700 mb-2">Link da Reunião</h3>
+                      <a
+                        href={agendamento.link_agendamento}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="bg-blue-50 rounded-lg p-4 border border-blue-200 flex items-center gap-2 hover:bg-blue-100 transition-colors"
+                      >
+                        <LinkIcon className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                        <span className="text-blue-600 font-medium truncate flex-1">
+                          {agendamento.link_agendamento}
+                        </span>
+                        <ExternalLink className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Botão Chamar no WhatsApp */}
+                  {agendamento.telefone_cliente && (
+                    <div>
+                      <Button
+                        variant="primary"
+                        onClick={handleWhatsApp}
+                        className="w-full flex items-center justify-center gap-2"
+                      >
+                        <WhatsAppIcon className="w-5 h-5" />
+                        Chamar no WhatsApp
+                      </Button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* Resumo do Atendimento */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Resumo do Atendimento</h3>
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      {atendimento?.resumo_conversa ? (
+                        <p className="text-gray-800 whitespace-pre-wrap">{atendimento.resumo_conversa}</p>
+                      ) : (
+                        <p className="text-gray-400 italic">Nenhum resumo disponível</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Botão Chamar no WhatsApp */}
+                  {atendimento?.telefone_cliente && (
+                    <div>
+                      <Button
+                        variant="primary"
+                        onClick={handleWhatsApp}
+                        className="w-full flex items-center justify-center gap-2"
+                      >
+                        <WhatsAppIcon className="w-5 h-5" />
+                        Chamar no WhatsApp
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ) : (
             <div className="text-center text-gray-500 py-12">
-              <p>Atendimento não encontrado</p>
+              <p>{isAgendamento ? 'Agendamento' : 'Atendimento'} não encontrado</p>
             </div>
           )}
         </div>

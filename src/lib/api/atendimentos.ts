@@ -229,6 +229,65 @@ export async function createAtendimento(
   };
 }
 
+/**
+ * Busca atendimento por cliente_id e usuario_id
+ * @param clienteId - ID do cliente
+ * @param userId - ID do usuário
+ */
+export async function getAtendimentoByCliente(clienteId: string, userId?: string): Promise<Atendimento | null> {
+  if (!userId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    userId = user.id;
+  }
+
+  const connectedInstances = await getConnectedInstances(userId);
+  const instanceIds = connectedInstances.map(inst => inst.id);
+
+  if (instanceIds.length === 0) {
+    return null;
+  }
+
+  // Buscar atendimento mais recente do cliente
+  const { data, error } = await supabase
+    .from('atendimentos_solicitado')
+    .select(`
+      *,
+      clientes (
+        nome,
+        telefone,
+        foto_perfil
+      ),
+      whatsapp_instances (
+        telefone
+      )
+    `)
+    .eq('cliente_id', clienteId)
+    .eq('usuario_id', userId)
+    .in('whatsapp_instance_id', instanceIds)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    cliente_id: data.cliente_id,
+    cliente_nome: data.clientes?.nome,
+    cliente_foto_perfil: data.clientes?.foto_perfil || undefined,
+    telefone_cliente: data.clientes?.telefone || '',
+    telefone_usuario: data.whatsapp_instances?.telefone || '',
+    usuario_id: data.usuario_id,
+    status: (data.status || 'aberto') as StatusAtendimento,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+    resumo_conversa: data.resumo_conversa || undefined,
+  };
+}
+
 export async function getAtendimentoById(id: string): Promise<Atendimento | null> {
   // Buscar atendimento com joins
   const { data, error } = await supabase
@@ -272,6 +331,81 @@ export async function getAtendimentoById(id: string): Promise<Atendimento | null
 }
 
 /**
+ * Busca quantidade de atendimentos por mês
+ * @param userId - ID do usuário (opcional, se não fornecido busca do auth)
+ * @param months - Número de meses para buscar (padrão: 6)
+ */
+export async function getAtendimentosPorMes(userId?: string, months: number = 6): Promise<Array<{ mes: string; quantidade: number }>> {
+  // Buscar instâncias conectadas do usuário
+  const connectedInstances = await getConnectedInstances(userId);
+  const instanceIds = connectedInstances.map(inst => inst.id);
+
+  if (instanceIds.length === 0) {
+    return [];
+  }
+
+  // Calcular data inicial (meses atrás)
+  const dataInicial = new Date();
+  dataInicial.setMonth(dataInicial.getMonth() - months);
+  dataInicial.setDate(1);
+  dataInicial.setHours(0, 0, 0, 0);
+
+  // Buscar atendimentos agrupados por mês
+  const { data: atendimentos, error } = await supabase
+    .from('atendimentos_solicitado')
+    .select('created_at')
+    .in('whatsapp_instance_id', instanceIds)
+    .gte('created_at', dataInicial.toISOString())
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching atendimentos por mês:', error);
+    throw error;
+  }
+
+  if (!atendimentos || atendimentos.length === 0) {
+    return [];
+  }
+
+  // Mapeamento de meses em português
+  const mesesPt = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  
+  // Inicializar todos os meses com 0 (do mais antigo para o mais recente)
+  const mesesArray: Array<{ mes: string; quantidade: number; ordem: number; ano: number; mesIndex: number }> = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const data = new Date();
+    data.setMonth(data.getMonth() - i);
+    const mesIndex = data.getMonth();
+    const ano = data.getFullYear();
+    const mesKey = mesesPt[mesIndex];
+    mesesArray.push({ mes: mesKey, quantidade: 0, ordem: data.getTime(), ano, mesIndex });
+  }
+
+  // Contar atendimentos por mês
+  atendimentos.forEach((atendimento: any) => {
+    const data = new Date(atendimento.created_at);
+    const mesIndex = data.getMonth();
+    const ano = data.getFullYear();
+    const mesKey = mesesPt[mesIndex];
+    
+    // Encontrar o mês correto considerando ano e mês
+    const mesEncontrado = mesesArray.find(m => m.mes === mesKey && m.ano === ano && m.mesIndex === mesIndex);
+    if (mesEncontrado) {
+      mesEncontrado.quantidade += 1;
+    }
+  });
+
+  // Converter para array final sem as propriedades auxiliares, mantendo a ordem (mais antigo à esquerda, mais recente à direita)
+  // Formatar mês com ano: "jul de 2025"
+  const meses = mesesArray.map(({ mes, quantidade, ano }) => ({ 
+    mes: `${mes} de ${ano}`, 
+    quantidade 
+  }));
+
+  return meses;
+}
+
+/**
  * Busca estatísticas do dashboard
  * @param userId - ID do usuário (opcional, se não fornecido busca do auth)
  */
@@ -293,7 +427,7 @@ export async function getDashboardStats(userId?: string): Promise<DashboardStats
   // Buscar atendimentos usando whatsapp_instance_id
   const { data: atendimentos, error: atendimentosError } = await supabase
     .from('atendimentos_solicitado')
-    .select('id')
+    .select('id, status')
     .in('whatsapp_instance_id', instanceIds);
 
   if (atendimentosError) {
@@ -302,18 +436,86 @@ export async function getDashboardStats(userId?: string): Promise<DashboardStats
   }
 
   const totalAtendimentos = atendimentos?.length || 0;
-
-  // Como não há campo status, todos são considerados abertos
+  
+  // Contar atendimentos por status
+  const atendimentosEmAndamento = atendimentos?.filter(
+    (a: any) => a.status === 'em_andamento'
+  ).length || 0;
+  
+  const atendimentosAbertos = atendimentos?.filter(
+    (a: any) => a.status === 'aberto' || !a.status
+  ).length || 0;
+  
+  const atendimentosEncerrados = atendimentos?.filter(
+    (a: any) => a.status === 'encerrado'
+  ).length || 0;
 
   const stats: DashboardStats = {
     totalAtendimentos,
-    atendimentosAbertos: totalAtendimentos, // Todos são considerados abertos já que não há campo status
-    atendimentosEmAndamento: 0,
-    atendimentosEncerrados: 0,
+    atendimentosAbertos,
+    atendimentosEmAndamento,
+    atendimentosEncerrados,
     totalMensagens: 0, // Tabela mensagens não existe mais
   };
 
   return stats;
+}
+
+/**
+ * Busca os 5 atendimentos mais recentes (últimos cadastrados)
+ * @param userId - ID do usuário (opcional, se não fornecido busca do auth)
+ * @param limit - Número de atendimentos a retornar (padrão: 5)
+ */
+export async function getAtendimentosRecentes(userId?: string, limit: number = 5): Promise<Atendimento[]> {
+  // Buscar instâncias conectadas do usuário
+  const connectedInstances = await getConnectedInstances(userId);
+  const instanceIds = connectedInstances.map(inst => inst.id);
+
+  if (instanceIds.length === 0) {
+    return [];
+  }
+
+  // Buscar atendimentos ordenados por created_at (mais recentes primeiro)
+  const { data: atendimentos, error } = await supabase
+    .from('atendimentos_solicitado')
+    .select(`
+      *,
+      clientes (
+        nome,
+        telefone,
+        foto_perfil
+      ),
+      whatsapp_instances (
+        telefone
+      )
+    `)
+    .in('whatsapp_instance_id', instanceIds)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('Error fetching atendimentos recentes:', error);
+    throw error;
+  }
+
+  if (!atendimentos || atendimentos.length === 0) {
+    return [];
+  }
+
+  // Mapear para o tipo Atendimento
+  return atendimentos.map((atendimento: any) => ({
+    id: atendimento.id,
+    cliente_id: atendimento.cliente_id,
+    cliente_nome: atendimento.clientes?.nome,
+    cliente_foto_perfil: atendimento.clientes?.foto_perfil || undefined,
+    telefone_cliente: atendimento.clientes?.telefone || '',
+    telefone_usuario: atendimento.whatsapp_instances?.telefone || '',
+    usuario_id: atendimento.usuario_id,
+    status: (atendimento.status || 'aberto') as StatusAtendimento,
+    created_at: atendimento.created_at,
+    updated_at: atendimento.updated_at,
+    resumo_conversa: atendimento.resumo_conversa || undefined,
+  }));
 }
 
 /**
@@ -337,66 +539,6 @@ export async function updateAtendimentoStatus(
     console.error('Error updating atendimento status:', error);
     throw error;
   }
-}
-
-/**
- * Busca atendimentos criados nas últimas 4 horas
- * @param userId - ID do usuário (opcional, se não fornecido busca do auth)
- */
-export async function getAtendimentosRecentes(userId?: string): Promise<Atendimento[]> {
-  // Primeiro, buscar as instâncias conectadas do usuário
-  const connectedInstances = await getConnectedInstances(userId);
-  const instanceIds = connectedInstances.map(inst => inst.id);
-
-  if (instanceIds.length === 0) {
-    return [];
-  }
-
-  // Calcular a data de 4 horas atrás
-  const quatroHorasAtras = new Date();
-  quatroHorasAtras.setHours(quatroHorasAtras.getHours() - 4);
-
-  // Buscar atendimentos criados nas últimas 4 horas
-  const { data: atendimentos, error: atendimentosError } = await supabase
-    .from('atendimentos_solicitado')
-    .select(`
-      *,
-      clientes (
-        nome,
-        telefone,
-        foto_perfil
-      ),
-      whatsapp_instances (
-        telefone
-      )
-    `)
-    .in('whatsapp_instance_id', instanceIds)
-    .gte('created_at', quatroHorasAtras.toISOString())
-    .order('created_at', { ascending: false });
-
-  if (atendimentosError) {
-    console.error('Error fetching atendimentos recentes:', atendimentosError);
-    throw atendimentosError;
-  }
-
-  if (!atendimentos || atendimentos.length === 0) {
-    return [];
-  }
-
-  // Mapear para o tipo Atendimento
-  return atendimentos.map((atendimento: any) => ({
-    id: atendimento.id,
-    cliente_id: atendimento.cliente_id,
-    cliente_nome: atendimento.clientes?.nome,
-    cliente_foto_perfil: atendimento.clientes?.foto_perfil || undefined,
-    telefone_cliente: atendimento.clientes?.telefone || '',
-    telefone_usuario: atendimento.whatsapp_instances?.telefone || '',
-    usuario_id: atendimento.usuario_id,
-    status: (atendimento.status || 'aberto') as StatusAtendimento,
-    created_at: atendimento.created_at,
-    updated_at: atendimento.updated_at,
-    resumo_conversa: atendimento.resumo_conversa || undefined,
-  }));
 }
 
 /**

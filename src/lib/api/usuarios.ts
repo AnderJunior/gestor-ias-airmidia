@@ -4,6 +4,10 @@ export interface Usuario {
   id: string;
   nome: string | null;
   telefone_ia: string | null;
+  tipo_marcacao?: 'atendimento' | 'agendamento';
+  tipo?: 'cliente' | 'administracao';
+  fase?: 'teste' | 'producao';
+  ativo?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -148,5 +152,106 @@ export async function upsertUsuario(nome: string, telefone_ia: string, userId?: 
   }
 
   return data;
+}
+
+/**
+ * Atualiza apenas o nome do usuário
+ * @param nome - Novo nome do usuário
+ * @param userId - ID do usuário (opcional, se não fornecido busca do auth)
+ */
+export async function atualizarNomeUsuario(nome: string, userId?: string): Promise<Usuario> {
+  let finalUserId = userId;
+  
+  // Se não forneceu userId, buscar do auth
+  if (!finalUserId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+    finalUserId = user.id;
+  }
+
+  // Buscar dados atuais do usuário para manter o telefone_ia
+  const usuarioAtual = await getUsuario(finalUserId);
+  if (!usuarioAtual) {
+    throw new Error('Usuário não encontrado');
+  }
+
+  // Atualizar apenas o nome, mantendo o telefone_ia existente
+  const { data, error } = await supabase
+    .from('usuarios')
+    .update({
+      nome,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', finalUserId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating usuario nome:', error);
+    throw error;
+  }
+
+  // Limpar cache após atualização
+  if (finalUserId) {
+    clearUsuarioCache(finalUserId);
+  }
+
+  return data;
+}
+
+/**
+ * Busca todos os usuários (clientes) para administração
+ * Exclui apenas usuários com tipo 'administracao'
+ * Inclui clientes ativos e inativos
+ */
+export async function getAllUsuarios(): Promise<Usuario[]> {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('*')
+    .neq('tipo', 'administracao')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching usuarios:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Busca estatísticas de clientes para administração
+ */
+export interface EstatisticasClientes {
+  totalAtivos: number;
+  totalTeste: number;
+  totalProducao: number;
+}
+
+export async function getEstatisticasClientes(): Promise<EstatisticasClientes> {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('fase, tipo')
+    .neq('tipo', 'administracao')
+    .eq('ativo', true);
+
+  if (error) {
+    console.error('Error fetching estatisticas:', error);
+    throw error;
+  }
+
+  const usuarios = data || [];
+  
+  const totalAtivos = usuarios.length;
+  const totalTeste = usuarios.filter(u => u.fase === 'teste').length;
+  const totalProducao = usuarios.filter(u => u.fase === 'producao').length;
+
+  return {
+    totalAtivos,
+    totalTeste,
+    totalProducao,
+  };
 }
 

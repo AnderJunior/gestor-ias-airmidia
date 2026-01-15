@@ -22,7 +22,12 @@ export function LoginForm() {
     try {
       const { error } = await signIn(email, password);
       if (error) {
-        setError(error.message || 'Erro ao fazer login');
+        // Traduz mensagens de erro do Supabase
+        if (error.message.includes('Invalid login credentials') || error.message.includes('Email not confirmed')) {
+          setError('Credenciais inválidas. Verifique seu e-mail e senha e tente novamente.');
+        } else {
+          setError(error.message || 'Erro ao fazer login');
+        }
       } else {
         router.push(ROUTES.DASHBOARD);
         router.refresh();

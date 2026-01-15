@@ -139,35 +139,56 @@ CREATE POLICY "Usuários podem atualizar seus próprios atendimentos"
   );
 
 -- 6. Criar políticas RLS para mensagens
-DROP POLICY IF EXISTS "Usuários podem ver mensagens dos seus atendimentos" ON mensagens;
-CREATE POLICY "Usuários podem ver mensagens dos seus atendimentos"
+-- Estrutura: cliente_id (uuid), usuario_id (uuid), mensagem_usuario (varchar), mensagem_cliente (varchar)
+DROP POLICY IF EXISTS "Usuários podem ver mensagens relacionadas a eles" ON mensagens;
+CREATE POLICY "Usuários podem ver mensagens relacionadas a eles"
   ON mensagens FOR SELECT
   USING (
     auth.role() = 'authenticated' AND
     EXISTS (
       SELECT 1 FROM usuarios u
       WHERE u.id = auth.uid()
-      AND EXISTS (
-        SELECT 1 FROM atendimentos a
-        WHERE a.id = mensagens.atendimento_id
-        AND a.usuario_id = u.id
+      AND (
+        -- Mensagens onde o usuário é o usuario_id
+        mensagens.usuario_id = u.id
+        OR
+        -- Mensagens de clientes dos atendimentos_solicitado do usuário
+        EXISTS (
+          SELECT 1 FROM atendimentos_solicitado a
+          WHERE a.cliente_id = mensagens.cliente_id
+          AND a.usuario_id = u.id
+        )
       )
     )
   );
 
-DROP POLICY IF EXISTS "Usuários podem criar mensagens nos seus atendimentos" ON mensagens;
-CREATE POLICY "Usuários podem criar mensagens nos seus atendimentos"
+DROP POLICY IF EXISTS "Usuários podem criar mensagens como usuario_id" ON mensagens;
+CREATE POLICY "Usuários podem criar mensagens como usuario_id"
   ON mensagens FOR INSERT
   WITH CHECK (
     auth.role() = 'authenticated' AND
     EXISTS (
       SELECT 1 FROM usuarios u
       WHERE u.id = auth.uid()
+      AND usuario_id = u.id
+      -- Verificar se o cliente_id pertence a um atendimento_solicitado do usuário
       AND EXISTS (
-        SELECT 1 FROM atendimentos a
-        WHERE a.id = mensagens.atendimento_id
+        SELECT 1 FROM atendimentos_solicitado a
+        WHERE a.cliente_id = mensagens.cliente_id
         AND a.usuario_id = u.id
       )
+    )
+  );
+
+DROP POLICY IF EXISTS "Usuários podem atualizar mensagens onde são usuario_id" ON mensagens;
+CREATE POLICY "Usuários podem atualizar mensagens onde são usuario_id"
+  ON mensagens FOR UPDATE
+  USING (
+    auth.role() = 'authenticated' AND
+    EXISTS (
+      SELECT 1 FROM usuarios u
+      WHERE u.id = auth.uid()
+      AND mensagens.usuario_id = u.id
     )
   );
 

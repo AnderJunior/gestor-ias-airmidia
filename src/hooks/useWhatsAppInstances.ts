@@ -63,13 +63,7 @@ export function useWhatsAppInstances() {
               }
             }
           )
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              console.log('Subscrito ao realtime de instâncias WhatsApp');
-            } else if (status === 'CHANNEL_ERROR') {
-              console.error('Erro na subscription de instâncias WhatsApp');
-            }
-          });
+          .subscribe();
 
         channelRef.current = channel;
       } catch (err) {
@@ -177,13 +171,7 @@ export function useConnectedInstances() {
               }
             }
           )
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              console.log('Subscrito ao realtime de instâncias conectadas');
-            } else if (status === 'CHANNEL_ERROR') {
-              console.error('Erro na subscription de instâncias conectadas');
-            }
-          });
+          .subscribe();
 
         channelRef.current = channel;
       } catch (err) {

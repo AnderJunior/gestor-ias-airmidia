@@ -330,7 +330,6 @@ export async function verificarConnectionState(instanceName: string): Promise<'o
     if (response.ok) {
       const data = await response.json();
       const state = data.instance?.state || data.state;
-      console.log(`Estado de conexão da instância ${instanceName}: ${state}`);
       return state || null;
     }
     return null;
@@ -362,7 +361,7 @@ export async function verificarSeInstanciaExistePorConnectionState(instanceName:
 /**
  * Faz logout de uma instância
  */
-async function fazerLogoutInstancia(instanceName: string): Promise<boolean> {
+export async function fazerLogoutInstancia(instanceName: string): Promise<boolean> {
   try {
     console.log(`Fazendo logout da instância ${instanceName}...`);
     const response = await fetch(`${EVOLUTION_API_URL}/instance/logout/${instanceName}`, {

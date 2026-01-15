@@ -1,33 +1,56 @@
 'use client';
 
-import { useState } from 'react';
-import { Atendimento, StatusAtendimento } from '@/types/domain';
+import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import { Atendimento, StatusAtendimento, Agendamento, StatusAgendamento } from '@/types/domain';
 import { formatSolicitadoEm } from '@/lib/utils/dates';
 import { Pagination } from '@/components/ui/Pagination';
 import { STATUS_OPTIONS } from '@/lib/constants';
 import { updateAtendimentoStatus, deleteAtendimento } from '@/lib/api/atendimentos';
+import { updateAgendamentoStatus, deleteAgendamento } from '@/lib/api/agendamentos';
 import { Eye, Trash2 } from 'lucide-react';
 import { StatusDropdown } from '@/components/ui/StatusDropdown';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+import { filterWhatsAppUrl } from '@/lib/utils/images';
 
 interface AtendimentoListProps {
-  atendimentos: Atendimento[];
+  atendimentos?: Atendimento[];
+  agendamentos?: Agendamento[];
   loading: boolean;
   onSelectAtendimento: (id: string) => void;
   onRefresh?: () => void;
+  tipoMarcacao?: 'atendimento' | 'agendamento';
 }
+
+const STATUS_OPTIONS_AGENDAMENTO = [
+  { value: 'agendado' as const, label: 'Agendado' },
+  { value: 'concluido' as const, label: 'Realizado' },
+  { value: 'cancelado' as const, label: 'Cancelado' },
+] as const;
 
 const ITEMS_PER_PAGE = 6;
 
-export function AtendimentoList({ atendimentos, loading, onSelectAtendimento, onRefresh }: AtendimentoListProps) {
+export function AtendimentoList({ 
+  atendimentos = [], 
+  agendamentos = [], 
+  loading, 
+  onSelectAtendimento, 
+  onRefresh,
+  tipoMarcacao = 'atendimento',
+}: AtendimentoListProps) {
+  const router = useRouter();
   const [currentPage, setCurrentPage] = useState(1);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [pendingUpdate, setPendingUpdate] = useState<{ id: string; status: StatusAtendimento } | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<{ id: string; status: StatusAtendimento | StatusAgendamento } | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  const isAgendamento = tipoMarcacao === 'agendamento';
+  const items = isAgendamento ? agendamentos : atendimentos;
+  const statusOptions = isAgendamento ? STATUS_OPTIONS_AGENDAMENTO : STATUS_OPTIONS;
 
   if (loading) {
     return (
@@ -37,48 +60,57 @@ export function AtendimentoList({ atendimentos, loading, onSelectAtendimento, on
     );
   }
 
-  if (atendimentos.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="text-center py-12 text-gray-500">
-        <p className="text-lg">Nenhum atendimento encontrado</p>
+        <p className="text-lg">Nenhum {isAgendamento ? 'agendamento' : 'atendimento'} encontrado</p>
       </div>
     );
   }
 
   // Calcular paginação
-  const totalPages = Math.ceil(atendimentos.length / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = startIndex + ITEMS_PER_PAGE;
-  const currentAtendimentos = atendimentos.slice(startIndex, endIndex);
+  const currentItems = items.slice(startIndex, endIndex);
 
-  const handleStatusChange = (newStatus: StatusAtendimento, atendimentoId: string) => {
-    // Converter 'aberto' para 'em_andamento' (mesmo comportamento do kanban)
-    let finalStatus = newStatus;
-    if (finalStatus === 'aberto') {
-      finalStatus = 'em_andamento';
+  const handleStatusChange = (newStatus: StatusAtendimento | StatusAgendamento, itemId: string) => {
+    if (isAgendamento) {
+      // Para agendamentos, atualizar diretamente
+      performStatusUpdate(itemId, newStatus as StatusAgendamento);
+    } else {
+      // Para atendimentos, converter 'aberto' para 'em_andamento' (mesmo comportamento do kanban)
+      let finalStatus = newStatus as StatusAtendimento;
+      if (finalStatus === 'aberto') {
+        finalStatus = 'em_andamento';
+      }
+      
+      // Se estiver finalizando, mostrar modal de confirmação
+      if (finalStatus === 'encerrado') {
+        setPendingUpdate({ id: itemId, status: finalStatus });
+        setShowConfirmModal(true);
+        return;
+      }
+      
+      // Para outros status, atualizar diretamente
+      performStatusUpdate(itemId, finalStatus);
     }
-    
-    // Se estiver finalizando, mostrar modal de confirmação
-    if (finalStatus === 'encerrado') {
-      setPendingUpdate({ id: atendimentoId, status: finalStatus });
-      setShowConfirmModal(true);
-      return;
-    }
-    
-    // Para outros status, atualizar diretamente
-    performStatusUpdate(atendimentoId, finalStatus);
   };
 
-  const performStatusUpdate = async (atendimentoId: string, status: StatusAtendimento) => {
-    setUpdatingStatus(atendimentoId);
+  const performStatusUpdate = async (itemId: string, status: StatusAtendimento | StatusAgendamento) => {
+    setUpdatingStatus(itemId);
     try {
-      await updateAtendimentoStatus(atendimentoId, status);
+      if (isAgendamento) {
+        await updateAgendamentoStatus(itemId, status as StatusAgendamento);
+      } else {
+        await updateAtendimentoStatus(itemId, status as StatusAtendimento);
+      }
       if (onRefresh) {
         onRefresh();
       }
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
-      alert('Erro ao atualizar status do atendimento');
+      alert(`Erro ao atualizar status do ${isAgendamento ? 'agendamento' : 'atendimento'}`);
     } finally {
       setUpdatingStatus(null);
     }
@@ -89,7 +121,11 @@ export function AtendimentoList({ atendimentos, loading, onSelectAtendimento, on
 
     setUpdatingStatus(pendingUpdate.id);
     try {
-      await updateAtendimentoStatus(pendingUpdate.id, pendingUpdate.status);
+      if (isAgendamento) {
+        await updateAgendamentoStatus(pendingUpdate.id, pendingUpdate.status as StatusAgendamento);
+      } else {
+        await updateAtendimentoStatus(pendingUpdate.id, pendingUpdate.status as StatusAtendimento);
+      }
       if (onRefresh) {
         onRefresh();
       }
@@ -97,7 +133,7 @@ export function AtendimentoList({ atendimentos, loading, onSelectAtendimento, on
       setPendingUpdate(null);
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
-      alert('Erro ao atualizar status do atendimento. Tente novamente.');
+      alert(`Erro ao atualizar status do ${isAgendamento ? 'agendamento' : 'atendimento'}. Tente novamente.`);
     } finally {
       setUpdatingStatus(null);
     }
@@ -132,15 +168,19 @@ export function AtendimentoList({ atendimentos, loading, onSelectAtendimento, on
 
     setDeletingId(pendingDeleteId);
     try {
-      await deleteAtendimento(pendingDeleteId);
+      if (isAgendamento) {
+        await deleteAgendamento(pendingDeleteId);
+      } else {
+        await deleteAtendimento(pendingDeleteId);
+      }
       if (onRefresh) {
         onRefresh();
       }
       setShowDeleteModal(false);
       setPendingDeleteId(null);
     } catch (error: any) {
-      console.error('Erro ao excluir atendimento:', error);
-      const errorMessage = error?.message || 'Erro ao excluir atendimento. Tente novamente.';
+      console.error(`Erro ao excluir ${isAgendamento ? 'agendamento' : 'atendimento'}:`, error);
+      const errorMessage = error?.message || `Erro ao excluir ${isAgendamento ? 'agendamento' : 'atendimento'}. Tente novamente.`;
       alert(errorMessage);
     } finally {
       setDeletingId(null);
@@ -189,30 +229,40 @@ export function AtendimentoList({ atendimentos, loading, onSelectAtendimento, on
     </svg>
   );
 
-  const atendimentoParaConfirmar = pendingUpdate 
-    ? atendimentos.find(a => a.id === pendingUpdate.id)
+  const itemParaConfirmar = pendingUpdate 
+    ? (isAgendamento 
+        ? agendamentos.find(a => a.id === pendingUpdate.id)
+        : atendimentos.find(a => a.id === pendingUpdate.id))
     : null;
 
-  const atendimentoParaExcluir = pendingDeleteId
-    ? atendimentos.find(a => a.id === pendingDeleteId)
+  const itemParaExcluir = pendingDeleteId
+    ? (isAgendamento
+        ? agendamentos.find(a => a.id === pendingDeleteId)
+        : atendimentos.find(a => a.id === pendingDeleteId))
     : null;
+
+  const itemNome = isAgendamento
+    ? (itemParaConfirmar as Agendamento | undefined)?.cliente_nome || (itemParaExcluir as Agendamento | undefined)?.cliente_nome
+    : (itemParaConfirmar as Atendimento | undefined)?.cliente_nome || (itemParaExcluir as Atendimento | undefined)?.cliente_nome;
 
   return (
     <>
       <Modal
         isOpen={showConfirmModal}
         onClose={handleCancelFinalizacao}
-        title="Confirmar Finalização"
+        title={isAgendamento ? "Confirmar Alteração" : "Confirmar Finalização"}
         closeOnClickOutside={false}
         size="md"
       >
         <div className="space-y-4">
           <p className="text-gray-700">
-            Deseja realmente finalizar o atendimento do lead{' '}
-            <strong>{atendimentoParaConfirmar?.cliente_nome || 'Cliente'}</strong>?
+            Deseja realmente {isAgendamento ? 'alterar o status' : 'finalizar o atendimento'} do lead{' '}
+            <strong>{itemNome || 'Cliente'}</strong>?
           </p>
           <p className="text-sm text-gray-500">
-            Esta ação moverá o atendimento para a coluna de finalizados.
+            {isAgendamento 
+              ? 'Esta ação alterará o status do agendamento.'
+              : 'Esta ação moverá o atendimento para a coluna de finalizados.'}
           </p>
           <div className="flex justify-end gap-3 pt-4">
             <Button
@@ -227,7 +277,7 @@ export function AtendimentoList({ atendimentos, loading, onSelectAtendimento, on
               onClick={handleConfirmFinalizacao}
               disabled={updatingStatus === pendingUpdate?.id}
             >
-              {updatingStatus === pendingUpdate?.id ? 'Finalizando...' : 'Confirmar Finalização'}
+              {updatingStatus === pendingUpdate?.id ? (isAgendamento ? 'Atualizando...' : 'Finalizando...') : 'Confirmar'}
             </Button>
           </div>
         </div>
@@ -242,8 +292,8 @@ export function AtendimentoList({ atendimentos, loading, onSelectAtendimento, on
       >
         <div className="space-y-4">
           <p className="text-gray-700">
-            Deseja realmente excluir o atendimento do lead{' '}
-            <strong>{atendimentoParaExcluir?.cliente_nome || 'Cliente'}</strong>?
+            Deseja realmente excluir o {isAgendamento ? 'agendamento' : 'atendimento'} do lead{' '}
+            <strong>{itemNome || 'Cliente'}</strong>?
           </p>
           <p className="text-sm text-gray-500">
             Esta ação não pode ser desfeita.
@@ -267,97 +317,123 @@ export function AtendimentoList({ atendimentos, loading, onSelectAtendimento, on
         </div>
       </Modal>
 
-      <div className="w-full">
-        <div className="bg-white overflow-hidden rounded-t-xl">
+      <div className="w-full flex flex-col" style={{ height: '100%', minHeight: 0 }}>
+        <div className="bg-white rounded-t-xl flex-1 overflow-y-auto" style={{ minHeight: 0 }}>
         <table className="w-full" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr>
               <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50 rounded-tl-xl">Nome do Cliente</th>
               <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Telefone</th>
-              <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Solicitado em</th>
+              <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">
+                {isAgendamento ? 'Data e Hora' : 'Solicitado em'}
+              </th>
               <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Status</th>
               <th className="px-6 py-3 text-right text-sm font-bold text-gray-700 bg-gray-50 rounded-tr-xl">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {currentAtendimentos.map((atendimento) => (
-              <tr
-                key={atendimento.id}
-                onClick={() => onSelectAtendimento(atendimento.id)}
-                className="hover:bg-gray-50 transition-colors cursor-pointer"
-              >
-                <td className="px-6 py-4 text-sm text-gray-900 font-bold">
-                  <div className="flex items-center gap-3">
-                    {atendimento.cliente_foto_perfil ? (
-                      <img
-                        src={atendimento.cliente_foto_perfil}
-                        alt={atendimento.cliente_nome || 'Cliente'}
-                        className="w-10 h-10 rounded-full object-cover flex-shrink-0 border border-gray-200"
+            {currentItems.map((item) => {
+              const itemData = item as Atendimento | Agendamento;
+              const clienteNome = itemData.cliente_nome;
+              const clienteFoto = itemData.cliente_foto_perfil;
+              const clienteId = itemData.cliente_id;
+              const telefoneCliente = isAgendamento 
+                ? (itemData as Agendamento).telefone_cliente || ''
+                : (itemData as Atendimento).telefone_cliente;
+              const dataHora = isAgendamento
+                ? (itemData as Agendamento).data_e_hora
+                : (itemData as Atendimento).created_at;
+              const status = itemData.status;
+
+              return (
+                <tr
+                  key={itemData.id}
+                  onClick={() => {
+                    // Navegar para a página de mensagens com o cliente_id
+                    router.push(`/mensagens?cliente_id=${clienteId}`);
+                  }}
+                  className="hover:bg-gray-50 transition-colors cursor-pointer"
+                >
+                  <td className="px-6 py-4 text-sm text-gray-900 font-bold">
+                    <div className="flex items-center gap-3">
+                      {filterWhatsAppUrl(clienteFoto) ? (
+                        <img
+                          src={filterWhatsAppUrl(clienteFoto)!}
+                          alt={clienteNome || 'Cliente'}
+                          className="w-10 h-10 rounded-full object-cover flex-shrink-0 border border-gray-200"
+                        />
+                      ) : (
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0 ${getAvatarColor(
+                            clienteNome
+                          )}`}
+                        >
+                          {getInitials(clienteNome)}
+                        </div>
+                      )}
+                      <span>
+                        {clienteNome || `Cliente ${clienteId.substring(0, 8)}`}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{telefoneCliente || '-'}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{formatSolicitadoEm(dataHora)}</td>
+                  <td className="px-6 py-4">
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <StatusDropdown
+                        value={isAgendamento 
+                          ? (status as StatusAgendamento)
+                          : (status === 'aberto' ? 'em_andamento' : status as StatusAtendimento)
+                        }
+                        options={statusOptions as readonly { value: StatusAtendimento | StatusAgendamento; label: string }[]}
+                        onChange={(newStatus) => handleStatusChange(newStatus, itemData.id)}
+                        disabled={updatingStatus === itemData.id}
                       />
-                    ) : (
-                      <div
-                        className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0 ${getAvatarColor(
-                          atendimento.cliente_nome
-                        )}`}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3 justify-end">
+                      {telefoneCliente && (
+                        <button
+                          onClick={(e) => handleWhatsApp(e, telefoneCliente)}
+                          className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          title="Abrir WhatsApp"
+                        >
+                          <WhatsAppIcon className="w-5 h-5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => handleView(e, itemData.id)}
+                        className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                        title="Visualizar"
                       >
-                        {getInitials(atendimento.cliente_nome)}
-                      </div>
-                    )}
-                    <span>
-                      {atendimento.cliente_nome || `Cliente ${atendimento.cliente_id.substring(0, 8)}`}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-600">{atendimento.telefone_cliente}</td>
-                <td className="px-6 py-4 text-sm text-gray-600">{formatSolicitadoEm(atendimento.created_at)}</td>
-                <td className="px-6 py-4">
-                  <div onClick={(e) => e.stopPropagation()}>
-                    <StatusDropdown
-                      value={atendimento.status === 'aberto' ? 'em_andamento' : atendimento.status}
-                      options={STATUS_OPTIONS as readonly { value: StatusAtendimento; label: string }[]}
-                      onChange={(newStatus) => handleStatusChange(newStatus, atendimento.id)}
-                      disabled={updatingStatus === atendimento.id}
-                    />
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3 justify-end">
-                    <button
-                      onClick={(e) => handleWhatsApp(e, atendimento.telefone_cliente)}
-                      className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                      title="Abrir WhatsApp"
-                    >
-                      <WhatsAppIcon className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={(e) => handleView(e, atendimento.id)}
-                      className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                      title="Visualizar"
-                    >
-                      <Eye className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={(e) => handleDelete(e, atendimento.id)}
-                      disabled={deletingId === atendimento.id}
-                      className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Excluir"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                        <Eye className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={(e) => handleDelete(e, itemData.id)}
+                        disabled={deletingId === itemData.id}
+                        className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Excluir"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {totalPages > 1 && (
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-        />
+        <div className="flex-shrink-0 pt-4">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
+        </div>
       )}
       </div>
     </>

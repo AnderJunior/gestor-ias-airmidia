@@ -146,7 +146,8 @@ export function useAtendimentos() {
               }
             }
           )
-          // Escutar mudanças na tabela clientes (pode afetar nome, telefone, foto_perfil dos atendimentos)
+          // Escutar mudanças na tabela clientes apenas para clientes dos atendimentos do usuário
+          // Usar debounce para evitar múltiplas requisições rápidas
           .on(
             'postgres_changes',
             {
@@ -157,8 +158,15 @@ export function useAtendimentos() {
             async (payload) => {
               if (!isMounted) return;
 
+              // Usar debounce simples para evitar múltiplas requisições rápidas
               // Recarregar atendimentos quando dados do cliente mudarem
+              // Nota: Não verificamos se o cliente está nos atendimentos porque
+              // isso requereria uma busca adicional. Apenas recarregamos se necessário.
               try {
+                // Pequeno delay para agrupar múltiplas mudanças
+                await new Promise(resolve => setTimeout(resolve, 300));
+                if (!isMounted) return;
+                
                 const updatedData = await getAtendimentos(user.id);
                 if (isMounted) {
                   // Atualizar referência dos IDs
@@ -170,13 +178,7 @@ export function useAtendimentos() {
               }
             }
           )
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              console.log('Subscrito ao realtime de atendimentos');
-            } else if (status === 'CHANNEL_ERROR') {
-              console.error('Erro na subscription de atendimentos');
-            }
-          });
+          .subscribe();
 
         channelRef.current = channel;
       } catch (error) {

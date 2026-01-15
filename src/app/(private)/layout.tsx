@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useAudioUnlock } from '@/hooks/useAudioUnlock';
 import { useAtendimentosNotifications } from '@/hooks/useAtendimentosNotifications';
+import { useAgendamentosNotifications } from '@/hooks/useAgendamentosNotifications';
 import { Sidebar } from '@/components/navigation/Sidebar';
 import { Topbar } from '@/components/navigation/Topbar';
 import { VerificacaoDadosIniciais } from '@/components/usuarios/VerificacaoDadosIniciais';
@@ -23,6 +24,8 @@ export default function PrivateLayout({
   useAudioUnlock();
   // Escutar novos atendimentos e tocar som de notificação em todas as telas
   useAtendimentosNotifications();
+  // Escutar novos agendamentos e tocar som de notificação em todas as telas
+  useAgendamentosNotifications();
 
   useEffect(() => {
     if (!loading && !user) {

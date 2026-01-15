@@ -26,6 +26,14 @@ END $$;
 -- Habilitar Realtime na tabela mensagens
 ALTER PUBLICATION supabase_realtime ADD TABLE mensagens;
 
+-- Habilitar Realtime na tabela agendamentos (se existir)
+DO $$
+BEGIN
+  IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'agendamentos') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE agendamentos;
+  END IF;
+END $$;
+
 -- Verificar se as tabelas foram adicionadas corretamente
 SELECT 
   schemaname,

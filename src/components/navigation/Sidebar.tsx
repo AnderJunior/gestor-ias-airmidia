@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation';
 import { ROUTES } from '@/lib/constants';
 import { useAuth } from '@/hooks/useAuth';
 import { useUsuario } from '@/hooks/useUsuario';
-import { DashboardIcon, ChatIcon, LogoutIcon } from '@/components/icons/NavIcons';
+import { useWhatsAppInstances } from '@/hooks/useWhatsAppInstances';
+import { DashboardIcon, ChatIcon, LogoutIcon, CalendarIcon, SettingsIcon, MessageIcon, ShieldIcon, UsersIcon } from '@/components/icons/NavIcons';
 import React from 'react';
 
 interface NavItem {
@@ -19,10 +20,27 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
   const { usuario: usuarioData } = useUsuario();
+  const { instances } = useWhatsAppInstances();
+
+  const isAdmin = usuarioData?.tipo === 'administracao';
+  
+  // Obter telefone da primeira instância conectada ou primeira disponível
+  const telefoneInstancia = instances.find(inst => inst.status === 'conectado')?.telefone || instances[0]?.telefone;
 
   const navItems: NavItem[] = [
-    { href: ROUTES.DASHBOARD, label: 'Dashboard', icon: <DashboardIcon /> },
-    { href: ROUTES.ATENDIMENTO, label: 'Atendimento', icon: <ChatIcon /> },
+    ...(isAdmin ? [] : [
+      { href: ROUTES.DASHBOARD, label: 'Dashboard', icon: <DashboardIcon /> },
+      { 
+        href: ROUTES.ATENDIMENTO, 
+        label: usuarioData?.tipo_marcacao === 'agendamento' ? 'Agendamentos' : 'Atendimento', 
+        icon: usuarioData?.tipo_marcacao === 'agendamento' ? <CalendarIcon /> : <UsersIcon />
+      },
+      { href: ROUTES.MENSAGENS, label: 'Mensagens', icon: <MessageIcon /> },
+    ]),
+    ...(isAdmin ? [
+      { href: ROUTES.ADMIN_DASHBOARD, label: 'Dashboard', icon: <DashboardIcon /> },
+      { href: ROUTES.ADMIN_CLIENTES, label: 'Clientes', icon: <UsersIcon /> },
+    ] : []),
   ];
 
   // Função para extrair primeiro e último nome
@@ -72,20 +90,14 @@ export function Sidebar() {
 
   return (
     <aside className="w-72 min-h-screen flex flex-col shadow-lg" style={{ backgroundColor: '#ffffff' }}>
-      {/* Perfil do Usuário */}
+      {/* Logo */}
       <div className="p-6 border-b" style={{ borderColor: '#F3F4F6' }}>
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-primary-600 rounded-full flex items-center justify-center text-white font-semibold text-lg shadow-md">
-            {getUserInitials()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-gray-900 truncate">
-              {getPrimeiroUltimoNome()}
-            </h3>
-            <p className="text-xs text-gray-500 truncate">
-              {formatarTelefoneExibicao(usuarioData?.telefone_ia || null)}
-            </p>
-          </div>
+        <div className="flex items-center justify-center">
+          <img 
+            src="/logotipo-air-midia.webp" 
+            alt="Air Midia Digital" 
+            className="h-auto w-[60%]"
+          />
         </div>
       </div>
       
@@ -120,17 +132,45 @@ export function Sidebar() {
         </ul>
       </nav>
 
-      {/* Botão de Sair */}
-      <div className="p-6 border-t border-primary-100">
-        <button
-          onClick={signOut}
-          className="group w-full text-left px-3 py-2.5 rounded-lg text-gray-700 hover:bg-red-600 hover:text-white transition-all duration-200 text-sm font-medium flex items-center gap-3"
+      {/* Configurações */}
+      <div className="p-6">
+        <Link
+          href={ROUTES.CONFIGURACOES}
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
+            pathname === ROUTES.CONFIGURACOES
+              ? 'bg-primary-600 text-white shadow-md'
+              : 'text-gray-700 hover:bg-primary-50'
+          }`}
         >
-          <span className="flex items-center justify-center text-gray-600 group-hover:text-white transition-colors duration-200">
-            <LogoutIcon />
+          <span className={`flex items-center justify-center ${pathname === ROUTES.CONFIGURACOES ? 'text-white drop-shadow-sm' : 'text-gray-600'}`}>
+            <SettingsIcon />
           </span>
-          <span>Sair</span>
-        </button>
+          <span className="text-sm font-medium flex-1">Configurações</span>
+        </Link>
+      </div>
+
+      {/* Perfil do Usuário */}
+      <div className="p-6 border-t" style={{ borderColor: '#F3F4F6' }}>
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-primary-600 rounded-full flex items-center justify-center text-white font-semibold text-lg shadow-md">
+            {getUserInitials()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-gray-500 truncate">
+              {getPrimeiroUltimoNome()}
+            </p>
+            <p className="text-xs text-gray-400 truncate">
+              {formatarTelefoneExibicao(telefoneInstancia || null)}
+            </p>
+          </div>
+          <button
+            onClick={signOut}
+            className="flex items-center justify-center text-gray-600 hover:text-gray-900 transition-colors duration-200 p-2 rounded-lg hover:bg-gray-100"
+            title="Sair"
+          >
+            <LogoutIcon className="w-5 h-5" />
+          </button>
+        </div>
       </div>
     </aside>
   );

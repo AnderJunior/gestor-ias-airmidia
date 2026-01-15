@@ -3,17 +3,19 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
-import { StatusAtendimento } from '@/types/domain';
+import { StatusAtendimento, StatusAgendamento } from '@/types/domain';
+
+type StatusType = StatusAtendimento | StatusAgendamento;
 
 interface StatusOption {
-  value: StatusAtendimento;
+  value: StatusType;
   label: string;
 }
 
 interface StatusDropdownProps {
-  value: StatusAtendimento;
+  value: StatusType;
   options: readonly StatusOption[];
-  onChange: (value: StatusAtendimento) => void;
+  onChange: (value: StatusType) => void;
   disabled?: boolean;
 }
 
@@ -110,7 +112,41 @@ export function StatusDropdown({ value, options, onChange, disabled = false }: S
   const selectedOption = options.find(opt => opt.value === value) || options[0];
 
   // Cores baseadas no status (seguindo o design das imagens)
-  const getStatusColors = (status: StatusAtendimento) => {
+  const getStatusColors = (status: StatusType) => {
+    // Status de agendamento
+    if (status === 'concluido') {
+      return {
+        bg: 'bg-green-100',
+        text: 'text-green-700',
+        hover: 'hover:bg-green-200',
+        selectedBg: 'bg-green-100',
+      };
+    }
+    if (status === 'cancelado') {
+      return {
+        bg: 'bg-red-100',
+        text: 'text-red-700',
+        hover: 'hover:bg-red-200',
+        selectedBg: 'bg-red-100',
+      };
+    }
+    if (status === 'confirmado') {
+      return {
+        bg: 'bg-blue-100',
+        text: 'text-blue-700',
+        hover: 'hover:bg-blue-200',
+        selectedBg: 'bg-blue-100',
+      };
+    }
+    if (status === 'agendado') {
+      return {
+        bg: 'bg-blue-100',
+        text: 'text-blue-700',
+        hover: 'hover:bg-blue-200',
+        selectedBg: 'bg-blue-100',
+      };
+    }
+    // Status de atendimento
     if (status === 'encerrado') {
       return {
         bg: 'bg-green-100',
@@ -130,7 +166,7 @@ export function StatusDropdown({ value, options, onChange, disabled = false }: S
 
   const colors = getStatusColors(value);
 
-  const handleSelect = (optionValue: StatusAtendimento) => {
+  const handleSelect = (optionValue: StatusType) => {
     onChange(optionValue);
     setIsOpen(false);
   };
