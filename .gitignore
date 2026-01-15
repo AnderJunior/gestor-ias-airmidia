@@ -1,41 +1,69 @@
-# dependencies
+# ======================
+# Dependencies
+# ======================
 /node_modules
 /.pnp
 .pnp.js
 
-# testing
+# ======================
+# Testing
+# ======================
 /coverage
 
-# next.js
+# ======================
+# Next.js
+# ======================
 /.next/
 /out/
-
-# production
 /build
 
-# misc
-.DS_Store
-*.pem
+# ======================
+# Environment files
+# ======================
+.env*
+!.env.example
 
-# debug
+# ======================
+# Logs
+# ======================
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
+logs/
 
-# local env files
-.env*.local
-.env*
+# ======================
+# IDEs
+# ======================
+.vscode/
+.idea/
 
-# vercel
+# ======================
+# OS files
+# ======================
+.DS_Store
+Thumbs.db
+
+# ======================
+# Vercel
+# ======================
 .vercel
 
-# typescript
+# ======================
+# TypeScript
+# ======================
 *.tsbuildinfo
 next-env.d.ts
 
+# ======================
+# Archives / Dumps
+# ======================
+*.zip
+*.tar
+*.tar.gz
 
-
-
-
-
-
+# ======================
+# Docker Compose (se usar)
+# ======================
+docker-compose.yml
+docker-compose.*.yml
