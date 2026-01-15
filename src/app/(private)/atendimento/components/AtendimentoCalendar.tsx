@@ -53,10 +53,6 @@ export function AtendimentoCalendar({ agendamentos, loading, onSelectAgendamento
 
   const handleDateChange = (date: Date) => setCurrentDate(date)
 
-  const handleFiltersChange = (newFilters: Filters) => {
-    setFilters(newFilters)
-  }
-
   const handleEventClick = (event: CalendarEvent) => {
     const agendamento = event.data?.agendamento as Agendamento | undefined
     if (agendamento?.cliente_id) {
