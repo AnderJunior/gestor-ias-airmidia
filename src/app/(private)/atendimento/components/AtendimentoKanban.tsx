@@ -62,7 +62,13 @@ export function AtendimentoKanban({
   const columns = isAgendamento ? columnsAgendamento : columnsAtendimento;
 
   // Agrupar dados por status baseado no tipo
-  const dadosPorStatus = useMemo(() => {
+  const dadosPorStatus = useMemo<{
+    agendado?: Agendamento[];
+    concluido?: Agendamento[];
+    cancelado?: Agendamento[];
+    em_andamento?: Atendimento[];
+    encerrado?: Atendimento[];
+  }>(() => {
     if (isAgendamento) {
       return {
         agendado: agendamentos.filter((a) => a.status === 'agendado' || a.status === 'confirmado'),
@@ -328,7 +334,7 @@ export function AtendimentoKanban({
 
       <div className="flex gap-6 overflow-x-auto pb-4">
         {columns.map((column) => {
-        const columnItems = dadosPorStatus[column.id as keyof typeof dadosPorStatus] || [];
+        const columnItems = (dadosPorStatus[column.id as keyof typeof dadosPorStatus] || []) as (Atendimento | Agendamento)[];
         const clientCount = columnItems.length;
 
         const isDragOver = dragOverColumn === column.id;
