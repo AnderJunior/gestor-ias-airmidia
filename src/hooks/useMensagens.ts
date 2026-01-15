@@ -19,6 +19,7 @@ export function useMensagens(atendimentoId: string | null) {
       return;
     }
 
+    const currentAtendimentoId = atendimentoId; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function setupRealtime() {
@@ -26,7 +27,7 @@ export function useMensagens(atendimentoId: string | null) {
         setLoading(true);
         
         // Carregar mensagens iniciais
-        const data = await getMensagensByAtendimento(atendimentoId);
+        const data = await getMensagensByAtendimento(currentAtendimentoId);
         if (!isMounted) return;
         
         setMensagens(data);
@@ -39,21 +40,21 @@ export function useMensagens(atendimentoId: string | null) {
 
         // Criar subscription para mudanças na tabela mensagens
         const channel = supabase
-          .channel(`mensagens:${atendimentoId}`)
+          .channel(`mensagens:${currentAtendimentoId}`)
           .on(
             'postgres_changes',
             {
               event: '*', // Escutar INSERT, UPDATE, DELETE
               schema: 'public',
               table: 'mensagens',
-              filter: `atendimento_id=eq.${atendimentoId}`,
+              filter: `atendimento_id=eq.${currentAtendimentoId}`,
             },
             async (payload) => {
               if (!isMounted) return;
 
               // Recarregar mensagens quando houver mudanças
               try {
-                const updatedData = await getMensagensByAtendimento(atendimentoId);
+                const updatedData = await getMensagensByAtendimento(currentAtendimentoId);
                 if (isMounted) {
                   setMensagens(updatedData);
                 }
