@@ -21,6 +21,7 @@ export function useRecentItems(tipoMarcacao?: 'atendimento' | 'agendamento') {
       return;
     }
 
+    const userId = user.id; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function fetchData() {
@@ -29,13 +30,13 @@ export function useRecentItems(tipoMarcacao?: 'atendimento' | 'agendamento') {
         setError(null);
 
         if (tipoMarcacao === 'agendamento') {
-          const dados = await getAgendamentosProximos(user.id, 5);
+          const dados = await getAgendamentosProximos(userId, 5);
           if (isMounted) {
             setAgendamentos(dados);
             setAtendimentos([]);
           }
         } else {
-          const dados = await getAtendimentosRecentes(user.id, 5);
+          const dados = await getAtendimentosRecentes(userId, 5);
           if (isMounted) {
             setAtendimentos(dados);
             setAgendamentos([]);
@@ -67,14 +68,15 @@ export function useRecentItems(tipoMarcacao?: 'atendimento' | 'agendamento') {
     error,
     refetch: async () => {
       if (!user?.id) return;
+      const userId = user.id; // Capturar valor para garantir tipo não-null
       setLoading(true);
       try {
         if (tipoMarcacao === 'agendamento') {
-          const dados = await getAgendamentosProximos(user.id, 5);
+          const dados = await getAgendamentosProximos(userId, 5);
           setAgendamentos(dados);
           setAtendimentos([]);
         } else {
-          const dados = await getAtendimentosRecentes(user.id, 5);
+          const dados = await getAtendimentosRecentes(userId, 5);
           setAtendimentos(dados);
           setAgendamentos([]);
         }
