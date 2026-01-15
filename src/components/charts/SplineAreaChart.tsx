@@ -68,7 +68,6 @@ export function SplineAreaChart({ data, title, color = '#22c55e', tipoMarcacao =
           fontSize: '12px',
         },
         rotate: -45, // Rotacionar labels se necessário para melhor visualização
-        rotateAlways: false, // Só rotacionar se necessário
       },
       axisBorder: {
         show: false,
@@ -86,7 +85,6 @@ export function SplineAreaChart({ data, title, color = '#22c55e', tipoMarcacao =
       },
       min: 0,
       tickAmount: 7, // Para ter intervalos de aproximadamente 2
-      forceNiceScale: true,
     },
     grid: {
       borderColor: '#e5e7eb',
@@ -99,7 +97,6 @@ export function SplineAreaChart({ data, title, color = '#22c55e', tipoMarcacao =
       yaxis: {
         lines: {
           show: true,
-          strokeDashArray: 3,
         },
       },
       padding: {
