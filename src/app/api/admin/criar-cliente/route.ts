@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
           .select()
           .single();
 
-        if (error1 && error1.message?.includes('null') || error1.message?.includes('NOT NULL')) {
+        if (error1 && (error1.message?.includes('null') || error1.message?.includes('NOT NULL'))) {
           // Se falhar por causa de NOT NULL, tentar com string vazia
           const { data: data2, error: error2 } = await supabaseAdmin
             .from('whatsapp_instances')
