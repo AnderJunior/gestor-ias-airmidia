@@ -122,18 +122,19 @@ export function useClientesComConversas() {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (!user) {
+    if (!user?.id) {
       setClientes([]);
       setLoading(false);
       return;
     }
 
+    const userId = user.id; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function loadClientes() {
       try {
         setLoading(true);
-        const data = await getClientesComConversas(user.id);
+        const data = await getClientesComConversas(userId);
         if (isMounted) {
           setClientes(data);
           setLoading(false);
@@ -151,19 +152,19 @@ export function useClientesComConversas() {
     // Escutar mudanças em atendimentos e mensagens para atualizar a lista
     // Filtrar apenas mudanças do usuário atual para reduzir requisições
     const atendimentosChannel = supabase
-      .channel(`atendimentos-updates:${user.id}`)
+      .channel(`atendimentos-updates:${userId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'atendimentos_solicitado',
-          filter: `usuario_id=eq.${user.id}`,
+          filter: `usuario_id=eq.${userId}`,
         },
         async () => {
-          if (isMounted && user) {
+          if (isMounted) {
             try {
-              const data = await getClientesComConversas(user.id);
+              const data = await getClientesComConversas(userId);
               setClientes(data);
             } catch (err) {
               console.error('Erro ao atualizar lista de clientes:', err);
@@ -174,19 +175,19 @@ export function useClientesComConversas() {
       .subscribe();
 
     const mensagensChannel = supabase
-      .channel(`mensagens-updates:${user.id}`)
+      .channel(`mensagens-updates:${userId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'mensagens',
-          filter: `usuario_id=eq.${user.id}`,
+          filter: `usuario_id=eq.${userId}`,
         },
         async () => {
-          if (isMounted && user) {
+          if (isMounted) {
             try {
-              const data = await getClientesComConversas(user.id);
+              const data = await getClientesComConversas(userId);
               setClientes(data);
             } catch (err) {
               console.error('Erro ao atualizar lista de clientes:', err);
