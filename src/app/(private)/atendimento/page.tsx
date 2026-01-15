@@ -23,8 +23,9 @@ export default function AtendimentoPage() {
 
   // Listener para abrir atendimento quando navegar via notificação
   useEffect(() => {
-    const handleOpenAtendimento = async (event: CustomEvent<{ atendimentoId: string }>) => {
-      const { atendimentoId } = event.detail;
+    const handleOpenAtendimento = async (event: Event) => {
+      const customEvent = event as CustomEvent<{ atendimentoId: string }>;
+      const { atendimentoId } = customEvent.detail;
       
       // Tentar abrir imediatamente se o atendimento já estiver na lista
       const atendimentoExiste = atendimentos.some(a => a.id === atendimentoId);
@@ -45,10 +46,10 @@ export default function AtendimentoPage() {
       }, 500);
     };
 
-    window.addEventListener('openAtendimento', handleOpenAtendimento as EventListener);
+    window.addEventListener('openAtendimento', handleOpenAtendimento);
 
     return () => {
-      window.removeEventListener('openAtendimento', handleOpenAtendimento as EventListener);
+      window.removeEventListener('openAtendimento', handleOpenAtendimento);
     };
   }, [atendimentos, openSidebar, refetch]);
 
