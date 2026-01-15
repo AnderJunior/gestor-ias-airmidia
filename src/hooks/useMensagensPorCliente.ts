@@ -14,12 +14,14 @@ export function useMensagensPorCliente(clienteId: string | null) {
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
-    if (!clienteId || !user) {
+    if (!clienteId || !user?.id) {
       setMensagens([]);
       setLoading(false);
       return;
     }
 
+    const currentClienteId = clienteId; // Capturar valor para garantir tipo não-null
+    const userId = user.id; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function setupRealtime() {
@@ -27,7 +29,7 @@ export function useMensagensPorCliente(clienteId: string | null) {
         setLoading(true);
         
         // Carregar mensagens iniciais
-        const data = await getMensagensByCliente(clienteId, user.id);
+        const data = await getMensagensByCliente(currentClienteId, userId);
         if (!isMounted) return;
         
         setMensagens(data);
@@ -41,28 +43,27 @@ export function useMensagensPorCliente(clienteId: string | null) {
         // Criar subscription para mudanças na tabela mensagens
         // Filtrar apenas mensagens deste cliente e usuário para reduzir requisições
         const channel = supabase
-          .channel(`mensagens-cliente:${clienteId}:${user.id}`)
+          .channel(`mensagens-cliente:${currentClienteId}:${userId}`)
           .on(
             'postgres_changes',
             {
               event: '*',
               schema: 'public',
               table: 'mensagens',
-              filter: `cliente_id=eq.${clienteId}`,
+              filter: `cliente_id=eq.${currentClienteId}`,
             },
             async (payload) => {
               if (!isMounted) return;
 
               // Verificar se a mensagem é do usuário atual antes de recarregar
-              const mensagemUsuarioId = payload.new?.usuario_id || payload.old?.usuario_id;
-              if (mensagemUsuarioId && mensagemUsuarioId !== user.id) {
+              const mensagemUsuarioId = (payload.new as any)?.usuario_id || (payload.old as any)?.usuario_id;
+              if (mensagemUsuarioId && mensagemUsuarioId !== userId) {
                 return; // Ignorar mensagens de outros usuários
               }
 
               // Recarregar mensagens quando houver mudanças relevantes
               try {
-                if (user) {
-                  const updatedData = await getMensagensByCliente(clienteId, user.id);
+                const updatedData = await getMensagensByCliente(currentClienteId, userId);
                   if (isMounted) {
                     setMensagens(updatedData);
                   }
@@ -99,10 +100,12 @@ export function useMensagensPorCliente(clienteId: string | null) {
     loading,
     error,
     refetch: async () => {
-      if (!clienteId || !user) return;
+      if (!clienteId || !user?.id) return;
+      const currentClienteId = clienteId; // Capturar valor para garantir tipo não-null
+      const userId = user.id; // Capturar valor para garantir tipo não-null
       setLoading(true);
       try {
-        const data = await getMensagensByCliente(clienteId, user.id);
+        const data = await getMensagensByCliente(currentClienteId, userId);
         setMensagens(data);
       } catch (err) {
         setError(err instanceof Error ? err : new Error('Erro ao recarregar mensagens'));
