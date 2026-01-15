@@ -177,7 +177,7 @@ export default function DashboardPage() {
         <RecentList
           atendimentos={atendimentos}
           agendamentos={agendamentos}
-          tipoMarcacao={tipoMarcacao}
+          tipoMarcacao={tipoMarcacao || 'atendimento'}
           loading={loadingRecentItems}
           onItemClick={handleItemClick}
         />
