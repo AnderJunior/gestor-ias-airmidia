@@ -21,14 +21,15 @@ export function useAgendamentosNotifications() {
       return;
     }
 
+    const userId = user.id; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function setupRealtime() {
       try {
-        console.log('Configurando realtime de notificações de agendamentos para usuário:', user.id);
+        console.log('Configurando realtime de notificações de agendamentos para usuário:', userId);
         
         // Carregar agendamentos iniciais para inicializar a referência
-        const data = await getAgendamentos(user.id);
+        const data = await getAgendamentos(userId);
         if (!isMounted) return;
 
         // Inicializar referência dos IDs apenas na primeira vez
@@ -45,14 +46,14 @@ export function useAgendamentosNotifications() {
 
         // Criar subscription para mudanças em agendamentos
         const channel = supabase
-          .channel(`agendamentos-notifications:${user.id}`)
+          .channel(`agendamentos-notifications:${userId}`)
           .on(
             'postgres_changes',
             {
               event: '*', // Escutar INSERT, UPDATE, DELETE
               schema: 'public',
               table: 'agendamentos',
-              filter: `usuario_id=eq.${user.id}`, // Filtrar apenas agendamentos do usuário logado
+              filter: `usuario_id=eq.${userId}`, // Filtrar apenas agendamentos do usuário logado
             },
             async (payload) => {
               if (!isMounted) return;
@@ -69,7 +70,7 @@ export function useAgendamentosNotifications() {
                 const previousIds = new Set(previousAgendamentosIdsRef.current);
                 console.log('IDs anteriores de agendamentos:', Array.from(previousIds));
                 
-                const updatedData = await getAgendamentos(user.id);
+                const updatedData = await getAgendamentos(userId);
                 if (!isMounted) return;
 
                 // Detectar novos agendamentos comparando IDs antes e depois

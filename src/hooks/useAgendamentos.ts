@@ -36,6 +36,7 @@ export function useAgendamentos() {
       return;
     }
 
+    const userId = user.id; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function setupRealtime() {
@@ -43,7 +44,7 @@ export function useAgendamentos() {
         setLoading(true);
 
         // Carregar agendamentos iniciais
-        const data = await getAgendamentos(user.id);
+        const data = await getAgendamentos(userId);
         if (!isMounted) return;
 
         setAgendamentos(data);
@@ -56,21 +57,21 @@ export function useAgendamentos() {
 
         // Criar subscription para mudanças em agendamentos
         const channel = supabase
-          .channel(`agendamentos:${user.id}`)
+          .channel(`agendamentos:${userId}`)
           .on(
             'postgres_changes',
             {
               event: '*', // Escutar INSERT, UPDATE, DELETE
               schema: 'public',
               table: 'agendamentos',
-              filter: `usuario_id=eq.${user.id}`,
+              filter: `usuario_id=eq.${userId}`,
             },
             async (payload) => {
               if (!isMounted) return;
 
               // Recarregar agendamentos quando houver mudanças
               try {
-                const updatedData = await getAgendamentos(user.id);
+                const updatedData = await getAgendamentos(userId);
                 if (isMounted) {
                   setAgendamentos(updatedData);
                 }
@@ -98,7 +99,7 @@ export function useAgendamentos() {
                 await new Promise(resolve => setTimeout(resolve, 300));
                 if (!isMounted) return;
                 
-                const updatedData = await getAgendamentos(user.id);
+                const updatedData = await getAgendamentos(userId);
                 if (isMounted) {
                   setAgendamentos(updatedData);
                 }

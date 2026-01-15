@@ -39,6 +39,7 @@ export function useAtendimentos() {
       return;
     }
 
+    const userId = user.id; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function setupRealtime() {
@@ -46,7 +47,7 @@ export function useAtendimentos() {
         setLoading(true);
 
         // Carregar atendimentos iniciais
-        const data = await getAtendimentos(user.id);
+        const data = await getAtendimentos(userId);
         if (!isMounted) return;
 
         // Inicializar referência dos IDs
@@ -56,7 +57,7 @@ export function useAtendimentos() {
         setLoading(false);
 
         // Buscar instâncias conectadas para filtrar o realtime
-        const connectedInstances = await getConnectedInstances(user.id);
+        const connectedInstances = await getConnectedInstances(userId);
         if (!isMounted) return;
 
         const instanceIds = connectedInstances.map(inst => inst.id);
@@ -69,7 +70,7 @@ export function useAtendimentos() {
 
         // Criar subscription para mudanças em atendimentos_solicitado
         const channel = supabase
-          .channel(`atendimentos:${user.id}`)
+          .channel(`atendimentos:${userId}`)
           .on(
             'postgres_changes',
             {
@@ -81,7 +82,7 @@ export function useAtendimentos() {
               if (!isMounted) return;
 
               // Filtrar apenas mudanças relacionadas às instâncias conectadas do usuário
-              const changedInstanceId = payload.new?.whatsapp_instance_id || payload.old?.whatsapp_instance_id;
+              const changedInstanceId = (payload.new as any)?.whatsapp_instance_id || (payload.old as any)?.whatsapp_instance_id;
               
               // Se for INSERT ou UPDATE, verificar se a instância está nas conectadas
               if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
@@ -93,7 +94,7 @@ export function useAtendimentos() {
               // Recarregar atendimentos quando houver mudanças relevantes
               try {
                 const previousIds = new Set(previousAtendimentosIdsRef.current);
-                const updatedData = await getAtendimentos(user.id);
+                const updatedData = await getAtendimentos(userId);
                 if (isMounted) {
                   // Detectar novos atendimentos comparando IDs antes e depois
                   const currentIds = new Set(updatedData.map(a => a.id));
@@ -115,7 +116,7 @@ export function useAtendimentos() {
               event: 'UPDATE',
               schema: 'public',
               table: 'whatsapp_instances',
-              filter: `usuario_id=eq.${user.id}`,
+              filter: `usuario_id=eq.${userId}`,
             },
             async (payload) => {
               if (!isMounted) return;
@@ -127,14 +128,14 @@ export function useAtendimentos() {
               if (newStatus !== oldStatus) {
                 // Atualizar lista de instâncias conectadas
                 try {
-                  const connectedInstances = await getConnectedInstances(user.id);
+                  const connectedInstances = await getConnectedInstances(userId);
                   if (!isMounted) return;
 
                   const instanceIds = connectedInstances.map(inst => inst.id);
                   instanceIdsRef.current = instanceIds;
 
                   // Recarregar atendimentos
-                  const updatedData = await getAtendimentos(user.id);
+                  const updatedData = await getAtendimentos(userId);
                   if (isMounted) {
                     // Atualizar referência dos IDs
                     previousAtendimentosIdsRef.current = new Set(updatedData.map(a => a.id));
@@ -167,7 +168,7 @@ export function useAtendimentos() {
                 await new Promise(resolve => setTimeout(resolve, 300));
                 if (!isMounted) return;
                 
-                const updatedData = await getAtendimentos(user.id);
+                const updatedData = await getAtendimentos(userId);
                 if (isMounted) {
                   // Atualizar referência dos IDs
                   previousAtendimentosIdsRef.current = new Set(updatedData.map(a => a.id));

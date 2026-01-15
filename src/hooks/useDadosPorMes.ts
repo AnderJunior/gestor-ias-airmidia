@@ -22,6 +22,8 @@ export function useDadosPorMes(tipoMarcacao?: 'atendimento' | 'agendamento', mon
       return;
     }
 
+    const userId = user.id; // Capturar valor para garantir tipo não-null
+
     async function fetchData() {
       try {
         setLoading(true);
@@ -30,9 +32,9 @@ export function useDadosPorMes(tipoMarcacao?: 'atendimento' | 'agendamento', mon
         let dadosPorMes: DadosPorMes[] = [];
 
         if (tipoMarcacao === 'agendamento') {
-          dadosPorMes = await getAgendamentosPorMes(user.id, months);
+          dadosPorMes = await getAgendamentosPorMes(userId, months);
         } else {
-          dadosPorMes = await getAtendimentosPorMes(user.id, months);
+          dadosPorMes = await getAtendimentosPorMes(userId, months);
         }
 
         setDados(dadosPorMes);
@@ -53,14 +55,15 @@ export function useDadosPorMes(tipoMarcacao?: 'atendimento' | 'agendamento', mon
     error,
     refetch: async () => {
       if (!user?.id) return;
+      const userId = user.id; // Capturar valor para garantir tipo não-null
       setLoading(true);
       try {
         let dadosPorMes: DadosPorMes[] = [];
 
         if (tipoMarcacao === 'agendamento') {
-          dadosPorMes = await getAgendamentosPorMes(user.id, months);
+          dadosPorMes = await getAgendamentosPorMes(userId, months);
         } else {
-          dadosPorMes = await getAtendimentosPorMes(user.id, months);
+          dadosPorMes = await getAtendimentosPorMes(userId, months);
         }
 
         setDados(dadosPorMes);

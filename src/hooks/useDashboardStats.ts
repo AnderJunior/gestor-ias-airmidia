@@ -23,6 +23,7 @@ export function useDashboardStats() {
       return;
     }
 
+    const userId = user.id; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function setupRealtime() {
@@ -30,14 +31,14 @@ export function useDashboardStats() {
         setLoading(true);
         
         // Carregar estatísticas iniciais
-        const data = await getDashboardStats(user.id);
+        const data = await getDashboardStats(userId);
         if (!isMounted) return;
         
         setStats(data);
         setLoading(false);
 
         // Buscar instâncias conectadas para filtrar o realtime
-        const connectedInstances = await getConnectedInstances(user.id);
+        const connectedInstances = await getConnectedInstances(userId);
         if (!isMounted) return;
         
         const instanceIds = connectedInstances.map(inst => inst.id);
@@ -55,7 +56,7 @@ export function useDashboardStats() {
         // Criar subscription para mudanças em atendimentos_solicitado
         // Escutamos todas as mudanças e filtramos no callback para garantir compatibilidade
         const channel = supabase
-          .channel(`dashboard-stats:${user.id}`)
+          .channel(`dashboard-stats:${userId}`)
           .on(
             'postgres_changes',
             {
@@ -67,7 +68,7 @@ export function useDashboardStats() {
               if (!isMounted) return;
 
               // Filtrar apenas mudanças relacionadas às instâncias do usuário
-              const changedInstanceId = payload.new?.whatsapp_instance_id || payload.old?.whatsapp_instance_id;
+              const changedInstanceId = (payload.new as any)?.whatsapp_instance_id || (payload.old as any)?.whatsapp_instance_id;
               if (changedInstanceId && !instanceIdsRef.current.includes(changedInstanceId)) {
                 return; // Ignorar mudanças de outras instâncias
               }
@@ -82,7 +83,7 @@ export function useDashboardStats() {
                 
                 // Recarregar estatísticas quando houver mudanças relevantes
                 try {
-                  const updatedData = await getDashboardStats(user.id);
+                  const updatedData = await getDashboardStats(userId);
                   if (isMounted) {
                     setStats(updatedData);
                   }
@@ -99,20 +100,20 @@ export function useDashboardStats() {
               event: '*',
               schema: 'public',
               table: 'whatsapp_instances',
-              filter: `usuario_id=eq.${user.id}`,
+              filter: `usuario_id=eq.${userId}`,
             },
             async (payload) => {
               if (!isMounted) return;
 
               // Atualizar lista de instâncias conectadas e recarregar estatísticas
               try {
-                const updatedInstances = await getConnectedInstances(user.id);
+                const updatedInstances = await getConnectedInstances(userId);
                 if (isMounted) {
                   const updatedInstanceIds = updatedInstances.map(inst => inst.id);
                   instanceIdsRef.current = updatedInstanceIds;
                   
                   // Recarregar estatísticas
-                  const updatedData = await getDashboardStats(user.id);
+                  const updatedData = await getDashboardStats(userId);
                   if (isMounted) {
                     setStats(updatedData);
                   }

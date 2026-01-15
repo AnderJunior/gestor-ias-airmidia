@@ -24,6 +24,7 @@ export function useAtendimentosNotifications() {
       return;
     }
 
+    const userId = user.id; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     // Solicitar permissão de notificações quando o hook for montado
@@ -37,10 +38,10 @@ export function useAtendimentosNotifications() {
 
     async function setupRealtime() {
       try {
-        console.log('Configurando realtime de notificações de atendimentos para usuário:', user.id);
+        console.log('Configurando realtime de notificações de atendimentos para usuário:', userId);
         
         // Carregar atendimentos iniciais para inicializar a referência
-        const data = await getAtendimentos(user.id);
+        const data = await getAtendimentos(userId);
         if (!isMounted) return;
 
         // Inicializar referência dos IDs apenas na primeira vez
@@ -51,7 +52,7 @@ export function useAtendimentosNotifications() {
         }
 
         // Buscar instâncias conectadas para filtrar o realtime
-        const connectedInstances = await getConnectedInstances(user.id);
+        const connectedInstances = await getConnectedInstances(userId);
         if (!isMounted) return;
 
         const instanceIds = connectedInstances.map(inst => inst.id);
@@ -71,7 +72,7 @@ export function useAtendimentosNotifications() {
 
         // Criar subscription para mudanças em atendimentos_solicitado
         const channel = supabase
-          .channel(`atendimentos-notifications:${user.id}`)
+          .channel(`atendimentos-notifications:${userId}`)
           .on(
             'postgres_changes',
             {
@@ -90,7 +91,7 @@ export function useAtendimentosNotifications() {
               });
 
               // Filtrar apenas mudanças relacionadas às instâncias conectadas do usuário
-              const changedInstanceId = payload.new?.whatsapp_instance_id || payload.old?.whatsapp_instance_id;
+              const changedInstanceId = (payload.new as any)?.whatsapp_instance_id || (payload.old as any)?.whatsapp_instance_id;
               
               console.log('Verificando instância:', {
                 changedInstanceId,
@@ -107,12 +108,12 @@ export function useAtendimentosNotifications() {
               }
 
               // Verificar se o atendimento é para o usuário atual
-              const atendimentoUsuarioId = payload.new?.usuario_id;
-              const isForCurrentUser = atendimentoUsuarioId === user.id;
+              const atendimentoUsuarioId = (payload.new as any)?.usuario_id;
+              const isForCurrentUser = atendimentoUsuarioId === userId;
 
               console.log('Verificando se atendimento é para o usuário atual:', {
                 atendimentoUsuarioId,
-                currentUserId: user.id,
+                currentUserId: userId,
                 isForCurrentUser
               });
 
@@ -127,7 +128,7 @@ export function useAtendimentosNotifications() {
                 const previousIds = new Set(previousAtendimentosIdsRef.current);
                 console.log('IDs anteriores:', Array.from(previousIds));
                 
-                const updatedData = await getAtendimentos(user.id);
+                const updatedData = await getAtendimentos(userId);
                 if (isMounted) {
                   // Detectar novos atendimentos comparando IDs antes e depois
                   const currentIds = new Set(updatedData.map(a => a.id));
@@ -173,7 +174,7 @@ export function useAtendimentosNotifications() {
               event: 'UPDATE',
               schema: 'public',
               table: 'whatsapp_instances',
-              filter: `usuario_id=eq.${user.id}`,
+              filter: `usuario_id=eq.${userId}`,
             },
             async (payload) => {
               if (!isMounted) return;
@@ -185,14 +186,14 @@ export function useAtendimentosNotifications() {
               if (newStatus !== oldStatus) {
                 // Atualizar lista de instâncias conectadas
                 try {
-                  const connectedInstances = await getConnectedInstances(user.id);
+                  const connectedInstances = await getConnectedInstances(userId);
                   if (!isMounted) return;
 
                   const instanceIds = connectedInstances.map(inst => inst.id);
                   instanceIdsRef.current = instanceIds;
 
                   // Recarregar atendimentos para atualizar referência
-                  const updatedData = await getAtendimentos(user.id);
+                  const updatedData = await getAtendimentos(userId);
                   if (isMounted) {
                     previousAtendimentosIdsRef.current = new Set(updatedData.map(a => a.id));
                   }
