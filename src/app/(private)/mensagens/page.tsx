@@ -5,10 +5,11 @@ import { useSearchParams } from 'next/navigation';
 import { useMensagensPorCliente, useClientesComConversas } from '@/hooks/useMensagensPorCliente';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Search, Check, Play, Pause, Mic, ZoomIn, ZoomOut, Download, X } from 'lucide-react';
+import { Search, Check, Play, Pause, Mic, ZoomIn, ZoomOut, Download, X, File, Image as ImageIcon } from 'lucide-react';
 import { MensagemConversa } from '@/lib/api/mensagens';
-import { getAtendimentoByCliente } from '@/lib/api/atendimentos';
-import { getAgendamentoByCliente } from '@/lib/api/agendamentos';
+import { getAtendimentoByCliente, getAllAtendimentosByCliente } from '@/lib/api/atendimentos';
+import { getAgendamentoByCliente, getAllAgendamentosByCliente } from '@/lib/api/agendamentos';
+import { Modal } from '@/components/ui/Modal';
 import { getConnectedInstances } from '@/lib/api/whatsapp';
 import { useUsuario } from '@/hooks/useUsuario';
 import { useAuth } from '@/hooks/useAuth';
@@ -24,6 +25,7 @@ interface MensagemExibicao {
   created_at: string;
   base64_audio?: string | null;
   base64_imagem?: string | null;
+  base64_documento?: string | null;
 }
 
 // Componente de Player de Áudio estilo WhatsApp
@@ -238,6 +240,177 @@ function AudioPlayerWhatsApp({
   );
 }
 
+// Componente de Documento estilo WhatsApp
+function DocumentoMessage({ 
+  base64Documento, 
+  isCliente 
+}: { 
+  base64Documento: string;
+  isCliente: boolean;
+}) {
+  // Função para detectar tipo de arquivo pelo base64
+  const detectarTipoArquivo = (base64: string): { tipo: string; extensao: string; mimeType: string } => {
+    try {
+      // Pegar os primeiros bytes do base64
+      const header = base64.substring(0, 50);
+      const binaryString = atob(header);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      // PDF - começa com %PDF
+      if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+        return { tipo: 'PDF', extensao: 'pdf', mimeType: 'application/pdf' };
+      }
+
+      // DOCX - ZIP header (DOCX é um ZIP)
+      if (bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04) {
+        // Verificar se contém word/_rels/document.xml.rels no base64
+        const base64Lower = base64.toLowerCase();
+        if (base64Lower.includes('word/_rels/document.xml.rels') || 
+            base64Lower.includes('word/document.xml')) {
+          return { tipo: 'DOCX', extensao: 'docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+        }
+        // XLSX também é ZIP
+        if (base64Lower.includes('xl/_rels/workbook.xml.rels') || 
+            base64Lower.includes('xl/workbook.xml')) {
+          return { tipo: 'XLSX', extensao: 'xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+        }
+        // PPTX também é ZIP
+        if (base64Lower.includes('ppt/_rels/presentation.xml.rels') || 
+            base64Lower.includes('ppt/presentation.xml')) {
+          return { tipo: 'PPTX', extensao: 'pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
+        }
+      }
+
+      // DOC/XLS antigo - ambos começam com D0 CF 11 E0 (formato OLE2)
+      // Diferenciar pelo conteúdo interno (mais complexo, então vamos usar genérico)
+      if (bytes[0] === 0xD0 && bytes[1] === 0xCF && bytes[2] === 0x11 && bytes[3] === 0xE0) {
+        // Tentar detectar pelo nome do arquivo ou conteúdo
+        const base64Lower = base64.toLowerCase();
+        if (base64Lower.includes('worddocument') || base64Lower.includes('msword')) {
+          return { tipo: 'DOC', extensao: 'doc', mimeType: 'application/msword' };
+        } else if (base64Lower.includes('workbook') || base64Lower.includes('excel')) {
+          return { tipo: 'XLS', extensao: 'xls', mimeType: 'application/vnd.ms-excel' };
+        }
+        // Por padrão, assumir DOC (mais comum)
+        return { tipo: 'DOC', extensao: 'doc', mimeType: 'application/msword' };
+      }
+
+      // TXT - texto simples (sem header específico)
+      // Por padrão, se não conseguir detectar, retornar genérico
+      return { tipo: 'ARQUIVO', extensao: 'bin', mimeType: 'application/octet-stream' };
+    } catch (e) {
+      console.warn('Erro ao detectar tipo de arquivo:', e);
+      return { tipo: 'ARQUIVO', extensao: 'bin', mimeType: 'application/octet-stream' };
+    }
+  };
+
+  // Calcular tamanho do arquivo
+  const calcularTamanho = (base64: string): string => {
+    // Tamanho aproximado: base64 é ~33% maior que o binário original
+    const tamanhoBytes = (base64.length * 3) / 4;
+    
+    if (tamanhoBytes < 1024) {
+      return `${Math.round(tamanhoBytes)} B`;
+    } else if (tamanhoBytes < 1024 * 1024) {
+      return `${(tamanhoBytes / 1024).toFixed(1)} KB`;
+    } else {
+      return `${(tamanhoBytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+  };
+
+  const infoArquivo = detectarTipoArquivo(base64Documento);
+  const tamanho = calcularTamanho(base64Documento);
+  const nomeArquivo = `documento.${infoArquivo.extensao}`;
+
+  // Função para fazer download
+  const handleDownload = () => {
+    try {
+      const dataUri = `data:${infoArquivo.mimeType};base64,${base64Documento}`;
+      const link = document.createElement('a');
+      link.href = dataUri;
+      link.download = nomeArquivo;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Erro ao fazer download do documento:', error);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3 mt-[3px]">
+      {/* Ícone do arquivo estilo limpo (similar à imagem de referência) */}
+      <div className="relative flex-shrink-0">
+        <div className="w-12 h-14 bg-gray-500/80 rounded-md flex flex-col items-center justify-center relative">
+          {/* Ícone de documento no topo */}
+          <File className="w-5 h-5 text-white/90 mb-1" />
+          {/* Texto do tipo centralizado embaixo */}
+          <span className="text-[10px] font-bold text-white">
+            {infoArquivo.tipo}
+          </span>
+        </div>
+      </div>
+
+      {/* Informações do arquivo */}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-white truncate">
+          {nomeArquivo}
+        </p>
+        <p className="text-xs text-white/70">
+          {infoArquivo.tipo} • {tamanho}
+        </p>
+      </div>
+
+      {/* Ícone de download */}
+      <button
+        onClick={handleDownload}
+        className="flex-shrink-0 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+        title="Baixar arquivo"
+      >
+        <Download className="w-4 h-4 text-white/80" />
+      </button>
+    </div>
+  );
+}
+
+// Função helper para formatar a última mensagem na lista de conversas
+function formatarUltimaMensagem(cliente: any, duracaoAudio?: number): { icon: React.ReactNode; text: string } | null {
+  if (!cliente.ultima_mensagem_tipo) {
+    return null;
+  }
+
+  switch (cliente.ultima_mensagem_tipo) {
+    case 'audio':
+      // Formatar duração do áudio se disponível
+      const duracao = duracaoAudio || cliente.ultima_mensagem_duracao_audio;
+      let duracaoTexto = '';
+      if (duracao && !isNaN(duracao) && duracao > 0) {
+        const mins = Math.floor(duracao / 60);
+        const secs = Math.floor(duracao % 60);
+        duracaoTexto = `${mins}:${secs.toString().padStart(2, '0')}`;
+      }
+      return {
+        icon: <Mic className="w-4 h-4 text-gray-600 flex-shrink-0" />,
+        text: duracaoTexto || 'Áudio'
+      };
+    case 'imagem':
+      return {
+        icon: <ImageIcon className="w-4 h-4 text-gray-600 flex-shrink-0" />,
+        text: 'Foto'
+      };
+    case 'documento':
+      return {
+        icon: <File className="w-4 h-4 text-gray-600 flex-shrink-0" />,
+        text: 'Documento'
+      };
+    default:
+      return null;
+  }
+}
+
 export default function MensagensPage() {
   const searchParams = useSearchParams();
   const [clienteSelecionado, setClienteSelecionado] = useState<string | null>(null);
@@ -246,7 +419,8 @@ export default function MensagensPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [hasAtendimento, setHasAtendimento] = useState(false);
   const [hasAgendamento, setHasAgendamento] = useState(false);
-  const { clientes, loading: loadingClientes } = useClientesComConversas();
+  const { clientes, loading: loadingClientes, refetch: refetchClientes } = useClientesComConversas();
+  const [duracaoAudios, setDuracaoAudios] = useState<Map<string, number>>(new Map());
   const { mensagens, loading: loadingMensagens } = useMensagensPorCliente(clienteSelecionado);
   const { usuario } = useUsuario();
   const { user } = useAuth();
@@ -275,6 +449,21 @@ export default function MensagensPage() {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  
+  // Estado para modal de lista de atendimentos/agendamentos
+  const [listaModal, setListaModal] = useState<{
+    isOpen: boolean;
+    items: Array<{
+      id: string;
+      tipo: 'atendimento' | 'agendamento';
+      data: string;
+      status: string;
+      resumo_conversa?: string;
+    }>;
+  }>({
+    isOpen: false,
+    items: [],
+  });
   const loadClientesComAtendimentoRef = useRef<(() => Promise<void>) | undefined>(undefined);
   const loadClientesComAtendimentoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const clientesComAtendimentoCacheRef = useRef<{ timestamp: number; data: { clientes: Set<string>; status: Map<string, string> } } | null>(null);
@@ -338,6 +527,7 @@ export default function MensagensPage() {
         created_at: dataMensagem,
         base64_audio: mensagem.base64_audio,
         base64_imagem: mensagem.base64_imagem,
+        base64_documento: mensagem.base64_documento,
       };
     });
 
@@ -634,6 +824,106 @@ export default function MensagensPage() {
     loadClientesComAtendimentoRef.current = loadClientesComAtendimento;
   }, [loadClientesComAtendimento]);
 
+  // Buscar duração dos áudios de forma assíncrona
+  useEffect(() => {
+    if (!user?.id || clientes.length === 0) return;
+
+    const buscarDuracaoAudios = async () => {
+      const novasDuracaoAudios = new Map<string, number>();
+
+      // Buscar duração apenas para clientes com última mensagem de áudio
+      const clientesComAudio = clientes.filter(
+        c => c.ultima_mensagem_tipo === 'audio' && !duracaoAudios.has(c.id)
+      );
+
+      for (const cliente of clientesComAudio) {
+        try {
+          // Buscar última mensagem do cliente
+          const { data: mensagens, error } = await supabase
+            .from('mensagens')
+            .select('base64_audio')
+            .eq('cliente_id', cliente.id)
+            .eq('usuario_id', user.id)
+            .order('data_e_hora', { ascending: false })
+            .limit(1)
+            .single();
+
+          if (error && error.code !== 'PGRST116') {
+            // PGRST116 = nenhum resultado encontrado, ignorar
+            continue;
+          }
+
+          if (mensagens?.base64_audio) {
+            // Criar elemento de áudio temporário para obter duração
+            const audio = new Audio();
+            const base64Audio = mensagens.base64_audio.trim();
+            if (base64Audio && base64Audio.toUpperCase() !== 'EMPTY') {
+              // Detectar formato do áudio
+              let mimeType = 'audio/ogg; codecs=opus';
+              try {
+                const header = atob(base64Audio.substring(0, 20));
+                const bytes = new Uint8Array(header.length);
+                for (let i = 0; i < header.length; i++) {
+                  bytes[i] = header.charCodeAt(i);
+                }
+                if (bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
+                  mimeType = 'audio/ogg; codecs=opus';
+                } else if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+                  mimeType = 'audio/wav';
+                } else if ((bytes[0] === 0xFF && (bytes[1] === 0xFB || bytes[1] === 0xF3)) ||
+                          (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33)) {
+                  mimeType = 'audio/mpeg';
+                }
+              } catch (e) {
+                // Usar formato padrão
+              }
+
+              const dataUri = `data:${mimeType};base64,${base64Audio}`;
+              audio.src = dataUri;
+              audio.preload = 'metadata';
+
+              await new Promise<void>((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                  reject(new Error('Timeout'));
+                }, 5000);
+
+                audio.addEventListener('loadedmetadata', () => {
+                  clearTimeout(timeout);
+                  if (!isNaN(audio.duration) && audio.duration > 0) {
+                    novasDuracaoAudios.set(cliente.id, audio.duration);
+                  }
+                  resolve();
+                });
+
+                audio.addEventListener('error', () => {
+                  clearTimeout(timeout);
+                  resolve(); // Resolver mesmo com erro para não bloquear
+                });
+
+                audio.load();
+              });
+            }
+          }
+        } catch (error) {
+          // Ignorar erros silenciosamente
+          console.debug('Erro ao buscar duração do áudio:', error);
+        }
+      }
+
+      if (novasDuracaoAudios.size > 0) {
+        setDuracaoAudios(prev => {
+          const updated = new Map(prev);
+          novasDuracaoAudios.forEach((value, key) => {
+            updated.set(key, value);
+          });
+          return updated;
+        });
+      }
+    };
+
+    buscarDuracaoAudios();
+  }, [clientes, user?.id, duracaoAudios]);
+
   // Buscar todos os atendimentos/agendamentos para mapear quais clientes têm
   useEffect(() => {
     if (!user?.id || !usuario?.tipo_marcacao) {
@@ -854,21 +1144,55 @@ export default function MensagensPage() {
   const handleOpenDetalhes = async () => {
     if (!clienteSelecionado || !user?.id) return;
     
-    // Buscar atendimento/agendamento apenas quando necessário
     try {
-      let id: string | null = null;
-      
       if (usuario?.tipo_marcacao === 'agendamento') {
-        const agendamento = await getAgendamentoByCliente(clienteSelecionado, user.id);
-        id = agendamento?.id || null;
+        const agendamentos = await getAllAgendamentosByCliente(clienteSelecionado, user.id);
+        
+        if (agendamentos.length === 0) {
+          return;
+        }
+        
+        // Se houver apenas 1, abrir diretamente
+        if (agendamentos.length === 1) {
+          setAtendimentoId(agendamentos[0].id);
+          setIsSidebarOpen(true);
+          return;
+        }
+        
+        // Se houver mais de 1, mostrar lista
+        const items = agendamentos.map(ag => ({
+          id: ag.id,
+          tipo: 'agendamento' as const,
+          data: ag.created_at || ag.updated_at || '',
+          status: ag.status || 'agendado',
+          resumo_conversa: ag.resumo_conversa,
+        }));
+        
+        setListaModal({ isOpen: true, items });
       } else {
-        const atendimento = await getAtendimentoByCliente(clienteSelecionado, user.id);
-        id = atendimento?.id || null;
-      }
-      
-      if (id) {
-        setAtendimentoId(id);
-        setIsSidebarOpen(true);
+        const atendimentos = await getAllAtendimentosByCliente(clienteSelecionado, user.id);
+        
+        if (atendimentos.length === 0) {
+          return;
+        }
+        
+        // Se houver apenas 1, abrir diretamente
+        if (atendimentos.length === 1) {
+          setAtendimentoId(atendimentos[0].id);
+          setIsSidebarOpen(true);
+          return;
+        }
+        
+        // Se houver mais de 1, mostrar lista
+        const items = atendimentos.map(at => ({
+          id: at.id,
+          tipo: 'atendimento' as const,
+          data: at.created_at || at.updated_at || '',
+          status: at.status || 'aberto',
+          resumo_conversa: at.resumo_conversa,
+        }));
+        
+        setListaModal({ isOpen: true, items });
       }
     } catch (error) {
       console.error('Erro ao buscar atendimento/agendamento:', error);
@@ -879,6 +1203,58 @@ export default function MensagensPage() {
   const handleLogClick = (logId: string, tipo: 'atendimento' | 'agendamento') => {
     setAtendimentoId(logId);
     setIsSidebarOpen(true);
+  };
+
+  // Função para formatar data do modal de lista
+  const formatarDataLista = (data: string) => {
+    try {
+      const hoje = new Date();
+      const dataItem = new Date(data);
+      
+      const hojeSemHora = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+      const dataItemSemHora = new Date(dataItem.getFullYear(), dataItem.getMonth(), dataItem.getDate());
+      
+      const diffTime = hojeSemHora.getTime() - dataItemSemHora.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 0) {
+        return `Hoje ${format(dataItem, 'HH:mm', { locale: ptBR })}`;
+      } else {
+        return format(dataItem, 'dd/MM/yyyy HH:mm', { locale: ptBR });
+      }
+    } catch {
+      return '';
+    }
+  };
+
+  // Função para formatar status
+  const formatarStatusLista = (status: string, tipo: 'atendimento' | 'agendamento') => {
+    if (tipo === 'agendamento') {
+      const statusLower = status.toLowerCase();
+      if (statusLower === 'agendado' || statusLower === 'confirmado') {
+        return { texto: 'Agendado', cor: 'bg-yellow-100 text-yellow-700' };
+      } else if (statusLower === 'concluido' || statusLower === 'realizado') {
+        return { texto: 'Realizado', cor: 'bg-green-100 text-green-700' };
+      } else if (statusLower === 'cancelado') {
+        return { texto: 'Cancelado', cor: 'bg-red-100 text-red-700' };
+      }
+      return { texto: 'Agendado', cor: 'bg-yellow-100 text-yellow-700' };
+    } else {
+      const statusLower = status.toLowerCase();
+      if (statusLower === 'encerrado') {
+        return { texto: 'Encerrado', cor: 'bg-gray-100 text-gray-700' };
+      } else if (statusLower === 'em_andamento') {
+        return { texto: 'Em Andamento', cor: 'bg-blue-100 text-blue-700' };
+      }
+      return { texto: 'Aberto', cor: 'bg-purple-100 text-purple-700' };
+    }
+  };
+
+  // Handler para clicar em um item da lista
+  const handleItemListaClick = (itemId: string) => {
+    setAtendimentoId(itemId);
+    setIsSidebarOpen(true);
+    setListaModal({ isOpen: false, items: [] });
   };
 
   return (
@@ -972,9 +1348,25 @@ export default function MensagensPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <p className="text-sm text-gray-600 truncate flex-1">
-                            {cliente.ultima_mensagem || 'Nenhuma mensagem'}
-                          </p>
+                          {(() => {
+                            const duracaoAudio = duracaoAudios.get(cliente.id);
+                            const ultimaMensagemFormatada = formatarUltimaMensagem(cliente, duracaoAudio);
+                            if (ultimaMensagemFormatada) {
+                              return (
+                                <div className="flex items-center gap-1.5 truncate flex-1">
+                                  {ultimaMensagemFormatada.icon}
+                                  <p className="text-sm text-gray-600 truncate">
+                                    {ultimaMensagemFormatada.text}
+                                  </p>
+                                </div>
+                              );
+                            }
+                            return (
+                              <p className="text-sm text-gray-600 truncate flex-1">
+                                {cliente.ultima_mensagem || 'Nenhuma mensagem'}
+                              </p>
+                            );
+                          })()}
                           {cliente.remetente_ultima_mensagem === 'usuario' && (
                             <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
                           )}
@@ -1032,15 +1424,16 @@ export default function MensagensPage() {
                       : 'Atendimento'}
                   </span>
                 )}
-                <button 
-                  onClick={handleOpenDetalhes}
-                  disabled={!atendimentoId}
-                  className={`text-gray-600 hover:text-gray-900 ${!atendimentoId ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </button>
+                {(hasAtendimento || hasAgendamento) && (
+                  <button 
+                    onClick={handleOpenDetalhes}
+                    className="text-gray-600 hover:text-gray-900"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1119,37 +1512,19 @@ export default function MensagensPage() {
                           <div key={item.id} className="flex justify-center my-4">
                             <div 
                               onClick={() => handleLogClick(log.id, log.tipo)}
-                              className="flex items-center gap-2 text-sm px-4 py-2 bg-[#1e293b] rounded-lg max-w-full cursor-pointer hover:bg-[#334155] transition-colors"
+                              className="flex items-center justify-between gap-4 text-sm px-4 py-2 bg-[#1e293b] rounded-lg w-full max-w-4xl cursor-pointer hover:bg-[#334155] transition-colors"
                             >
-                              <span className="text-[#94a3b8] font-medium whitespace-nowrap">
-                                {formatarDataLog(log.data)}
-                              </span>
-                              {usuario?.nome && (
-                                <span className="text-[#94a3b8] whitespace-nowrap">
-                                  {usuario.nome}
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <span className="text-[#94a3b8] font-medium whitespace-nowrap">
+                                  {formatarDataLog(log.data)}
                                 </span>
-                              )}
-                              <span className="text-[#cbd5e1] whitespace-nowrap">
-                                {log.texto}
-                              </span>
+                                <span className="text-[#cbd5e1] whitespace-nowrap">
+                                  {log.texto}
+                                </span>
+                              </div>
                               {statusBadge && (
-                                <span className={`px-2 py-0.5 text-xs font-medium rounded border whitespace-nowrap ${statusBadge.cor}`}>
+                                <span className={`px-2 py-0.5 text-xs font-medium rounded border whitespace-nowrap flex-shrink-0 ${statusBadge.cor}`}>
                                   {statusBadge.texto}
-                                </span>
-                              )}
-                              {log.tipo === 'atendimento' && (
-                                <span className="px-2 py-0.5 text-xs font-medium rounded border bg-purple-500/20 text-purple-300 border-purple-500/30 whitespace-nowrap">
-                                  Atendimento
-                                </span>
-                              )}
-                              {log.tipo === 'agendamento' && (
-                                <span className="px-2 py-0.5 text-xs font-medium rounded border bg-blue-500/20 text-blue-300 border-blue-500/30 whitespace-nowrap">
-                                  Agendamento
-                                </span>
-                              )}
-                              {log.resumo_conversa && (
-                                <span className="text-[#64748b] text-xs truncate max-w-[300px]">
-                                  • Resumo da conversa: {log.resumo_conversa.length > 50 ? `${log.resumo_conversa.substring(0, 50)}...` : log.resumo_conversa}
                                 </span>
                               )}
                             </div>
@@ -1174,6 +1549,16 @@ export default function MensagensPage() {
                      ? mensagem.base64_audio.trim()
                      : null;
                       const temAudio = !!base64AudioValido;
+                      
+                      // Verificar se há documento (ignorar "EMPTY", "NULL" e strings vazias)
+                      const base64DocumentoValido = mensagem.base64_documento && 
+                     typeof mensagem.base64_documento === 'string' &&
+                     mensagem.base64_documento.trim() !== '' && 
+                     mensagem.base64_documento.trim().toUpperCase() !== 'EMPTY' &&
+                     mensagem.base64_documento.trim().toUpperCase() !== 'NULL'
+                     ? mensagem.base64_documento.trim()
+                     : null;
+                      const temDocumento = !!base64DocumentoValido;
                       
                       const temTexto = mensagem.conteudo && mensagem.conteudo.trim() !== '';
                       const dataUriImagem = temImagem ? `data:image/jpeg;base64,${mensagem.base64_imagem}` : null;
@@ -1266,6 +1651,16 @@ export default function MensagensPage() {
                                />
                              </div>
                            )}
+
+                           {/* Exibir documento se houver - Estilo WhatsApp */}
+                           {temDocumento && base64DocumentoValido && (
+                             <div className="mb-2">
+                               <DocumentoMessage
+                                 base64Documento={base64DocumentoValido}
+                                 isCliente={mensagem.isCliente}
+                               />
+                             </div>
+                           )}
                            
                            {/* Exibir texto se houver */}
                            {temTexto && (
@@ -1275,7 +1670,7 @@ export default function MensagensPage() {
                            )}
 
                            {/* Mensagem vazia (apenas mídia) */}
-                           {!temTexto && !temImagem && !temAudio && (
+                           {!temTexto && !temImagem && !temAudio && !temDocumento && (
                              <p className="text-sm text-gray-400 italic">
                                Mensagem sem conteúdo
                              </p>
@@ -1426,6 +1821,52 @@ export default function MensagensPage() {
           </div>
         </div>
       )}
+
+      {/* Modal de Lista de Atendimentos/Agendamentos */}
+      <Modal
+        isOpen={listaModal.isOpen}
+        onClose={() => setListaModal({ isOpen: false, items: [] })}
+        title={usuario?.tipo_marcacao === 'agendamento' ? 'Agendamentos' : 'Atendimentos'}
+        size="md"
+      >
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+          {listaModal.items.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">Nenhum item encontrado</p>
+          ) : (
+            listaModal.items.map((item) => {
+              const statusBadge = formatarStatusLista(item.status, item.tipo);
+              const dataFormatada = formatarDataLista(item.data);
+              const resumoPreview = item.resumo_conversa 
+                ? (item.resumo_conversa.length > 100 
+                    ? `${item.resumo_conversa.substring(0, 100)}...` 
+                    : item.resumo_conversa)
+                : '';
+
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => handleItemListaClick(item.id)}
+                  className="p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-600 font-medium">
+                      {dataFormatada}
+                    </span>
+                    <span className={`px-2 py-1 text-xs font-medium rounded ${statusBadge.cor}`}>
+                      {statusBadge.texto}
+                    </span>
+                  </div>
+                  {resumoPreview && (
+                    <p className="text-sm text-gray-500 line-clamp-2">
+                      {resumoPreview}
+                    </p>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

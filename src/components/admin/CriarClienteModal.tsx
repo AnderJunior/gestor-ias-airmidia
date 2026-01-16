@@ -5,11 +5,12 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { supabase } from '@/lib/supabaseClient';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface CriarClienteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (credenciais?: { email: string; senha: string; tipoCliente: 'atendimento' | 'agendamento' }) => void;
 }
 
 export function CriarClienteModal({ isOpen, onClose, onSuccess }: CriarClienteModalProps) {
@@ -19,6 +20,7 @@ export function CriarClienteModal({ isOpen, onClose, onSuccess }: CriarClienteMo
   const [tipoCliente, setTipoCliente] = useState<'atendimento' | 'agendamento'>('atendimento');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -115,6 +117,18 @@ export function CriarClienteModal({ isOpen, onClose, onSuccess }: CriarClienteMo
         throw new Error(data.error || 'Erro ao criar cliente');
       }
 
+      // Salvar credenciais para exibir no popup antes de limpar
+      const emailSalvo = email;
+      const senhaSalva = senha;
+      const tipoClienteSalvo = tipoCliente;
+
+      // Preparar credenciais para passar ao componente pai
+      const credenciais = {
+        email: emailSalvo,
+        senha: senhaSalva,
+        tipoCliente: tipoClienteSalvo,
+      };
+
       // Limpar formulário
       setNome('');
       setTelefoneAtendimento('');
@@ -122,10 +136,13 @@ export function CriarClienteModal({ isOpen, onClose, onSuccess }: CriarClienteMo
       setTipoCliente('atendimento');
       setEmail('');
       setSenha('');
+      setShowPassword(false);
       
-      // Fechar modal e atualizar lista
+      // Fechar modal de criação
       onClose();
-      onSuccess();
+      
+      // Passar credenciais para o componente pai via onSuccess
+      onSuccess(credenciais);
     } catch (err: any) {
       setError(err.message || 'Erro ao criar cliente. Tente novamente.');
     } finally {
@@ -141,102 +158,127 @@ export function CriarClienteModal({ isOpen, onClose, onSuccess }: CriarClienteMo
       setTipoCliente('atendimento');
       setEmail('');
       setSenha('');
+      setShowPassword(false);
       setError('');
       onClose();
     }
   };
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={handleClose}
-      title="Adicionar Novo Cliente"
-      closeOnClickOutside={!loading}
-      size="md"
-    >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          label="Nome"
-          type="text"
-          value={nome}
-          onChange={(e) => setNome(e.target.value)}
-          required
-          disabled={loading}
-          placeholder="Nome completo do cliente"
-        />
-
-        <Input
-          label="Telefone Atendimento"
-          type="tel"
-          value={telefoneFormatado}
-          onChange={handleTelefoneChange}
-          required
-          disabled={loading}
-          placeholder="+55 (11) 99999-9999"
-        />
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Tipo Cliente
-          </label>
-          <select
-            value={tipoCliente}
-            onChange={(e) => setTipoCliente(e.target.value as 'atendimento' | 'agendamento')}
-            disabled={loading}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={handleClose}
+        title="Adicionar Novo Cliente"
+        closeOnClickOutside={!loading}
+        size="md"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Input
+            label="Nome"
+            type="text"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
             required
-          >
-            <option value="atendimento">Atendimento</option>
-            <option value="agendamento">Agendamento</option>
-          </select>
-        </div>
+            disabled={loading}
+            placeholder="Nome completo do cliente"
+          />
 
-        <Input
-          label="E-mail"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          disabled={loading}
-          placeholder="email@exemplo.com"
-        />
+          <Input
+            label="Telefone Atendimento"
+            type="tel"
+            value={telefoneFormatado}
+            onChange={handleTelefoneChange}
+            required
+            disabled={loading}
+            placeholder="+55 (11) 99999-9999"
+          />
 
-        <Input
-          label="Senha"
-          type="password"
-          value={senha}
-          onChange={(e) => setSenha(e.target.value)}
-          required
-          disabled={loading}
-          placeholder="Mínimo 6 caracteres"
-          minLength={6}
-        />
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-            {error}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Tipo Cliente
+            </label>
+            <select
+              value={tipoCliente}
+              onChange={(e) => setTipoCliente(e.target.value as 'atendimento' | 'agendamento')}
+              disabled={loading}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+              required
+            >
+              <option value="atendimento">Atendimento</option>
+              <option value="agendamento">Agendamento</option>
+            </select>
           </div>
-        )}
 
-        <div className="flex justify-end gap-3 pt-4">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={handleClose}
+          <Input
+            label="E-mail"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
             disabled={loading}
-          >
-            Cancelar
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={loading}
-          >
-            {loading ? 'Criando...' : 'Criar Cliente'}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+            placeholder="email@exemplo.com"
+          />
+
+          <div className="w-full">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Senha
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
+                required
+                disabled={loading}
+                placeholder="Mínimo 6 caracteres"
+                minLength={6}
+                className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent ${
+                  error ? 'border-red-500' : 'border-gray-300'
+                } disabled:bg-gray-100 disabled:cursor-not-allowed`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+                aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+              >
+                {showPassword ? (
+                  <EyeOff className="w-5 h-5" />
+                ) : (
+                  <Eye className="w-5 h-5" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleClose}
+              disabled={loading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={loading}
+            >
+              {loading ? 'Criando...' : 'Criar Cliente'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </>
   );
 }
 

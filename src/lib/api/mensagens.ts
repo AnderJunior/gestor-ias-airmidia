@@ -16,6 +16,7 @@ export interface MensagemConversa {
   data_e_hora?: string;
   base64_audio?: string | null;
   base64_imagem?: string | null;
+  base64_documento?: string | null;
 }
 
 /**
@@ -113,6 +114,8 @@ export interface ClienteComConversa {
   ultima_mensagem_at?: string;
   remetente_ultima_mensagem?: 'cliente' | 'usuario';
   atendimento_id?: string;
+  ultima_mensagem_tipo?: 'audio' | 'imagem' | 'documento' | 'texto';
+  ultima_mensagem_duracao_audio?: number; // Duração em segundos para áudio
 }
 
 /**
@@ -197,6 +200,35 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
     const remetente = remetenteRaw.includes('cliente') || remetenteRaw === 'cliente' ? 'cliente' : 'usuario';
     const dataMensagem = mensagemData.data_e_hora || mensagemData.created_at;
 
+    // Verificar tipo da mensagem (áudio, imagem, documento)
+    const base64AudioValido = mensagemData.base64_audio && 
+      typeof mensagemData.base64_audio === 'string' &&
+      mensagemData.base64_audio.trim() !== '' && 
+      mensagemData.base64_audio.trim().toUpperCase() !== 'EMPTY';
+    
+    const base64ImagemValido = mensagemData.base64_imagem && 
+      mensagemData.base64_imagem.trim() !== '' && 
+      mensagemData.base64_imagem.trim().toUpperCase() !== 'EMPTY';
+    
+    const base64DocumentoValido = mensagemData.base64_documento && 
+      typeof mensagemData.base64_documento === 'string' &&
+      mensagemData.base64_documento.trim() !== '' && 
+      mensagemData.base64_documento.trim().toUpperCase() !== 'EMPTY' &&
+      mensagemData.base64_documento.trim().toUpperCase() !== 'NULL';
+
+    let tipoMensagem: 'audio' | 'imagem' | 'documento' | 'texto' = 'texto';
+    let duracaoAudio: number | undefined = undefined;
+
+    if (base64AudioValido) {
+      tipoMensagem = 'audio';
+      // Tentar obter duração do áudio se disponível (pode estar em um campo separado ou precisar calcular)
+      // Por enquanto, vamos deixar undefined e calcular no frontend se necessário
+    } else if (base64ImagemValido) {
+      tipoMensagem = 'imagem';
+    } else if (base64DocumentoValido) {
+      tipoMensagem = 'documento';
+    }
+
     // Se já existe o cliente no map, verificar se esta mensagem é mais recente
     const clienteExistente = clientesMap.get(clienteId);
     
@@ -210,6 +242,8 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
         ultima_mensagem: ultimaMensagem,
         ultima_mensagem_at: dataMensagem,
         remetente_ultima_mensagem: remetente,
+        ultima_mensagem_tipo: tipoMensagem,
+        ultima_mensagem_duracao_audio: duracaoAudio,
       });
     } else {
       // Comparar datas e atualizar se necessário
@@ -222,6 +256,8 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
           ultima_mensagem: ultimaMensagem || clienteExistente.ultima_mensagem,
           ultima_mensagem_at: dataNova,
           remetente_ultima_mensagem: remetente,
+          ultima_mensagem_tipo: tipoMensagem,
+          ultima_mensagem_duracao_audio: duracaoAudio,
         });
       }
     }

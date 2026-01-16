@@ -8,3 +8,4 @@ DROP INDEX IF EXISTS public.idx_mensagens_base64_imagem;
 
 
 
+

@@ -7,6 +7,7 @@ import { Usuario } from '@/lib/api/usuarios';
 import { WhatsAppInstance } from '@/types/domain';
 import { Pagination } from '@/components/ui/Pagination';
 import { CriarClienteModal } from '@/components/admin/CriarClienteModal';
+import { CredenciaisPopup } from '@/components/admin/CredenciaisPopup';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
@@ -44,6 +45,12 @@ export default function AdminClientesPage() {
   const [showVoltarTesteModal, setShowVoltarTesteModal] = useState(false);
   const [clienteParaPublicar, setClienteParaPublicar] = useState<ClienteComStatus | null>(null);
   const [updatingFase, setUpdatingFase] = useState(false);
+  const [showCredenciaisPopup, setShowCredenciaisPopup] = useState(false);
+  const [credenciaisData, setCredenciaisData] = useState<{
+    email: string;
+    senha: string;
+    tipoCliente: 'atendimento' | 'agendamento';
+  } | null>(null);
 
   // Buscar status de conexão para cada cliente
   useEffect(() => {
@@ -443,9 +450,17 @@ export default function AdminClientesPage() {
       <CriarClienteModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSuccess={() => {
+        onSuccess={(credenciais) => {
           refetch();
           setIsModalOpen(false);
+          // Se houver credenciais, mostrar o popup
+          if (credenciais) {
+            setCredenciaisData(credenciais);
+            // Usar setTimeout para garantir que o modal seja fechado antes do popup aparecer
+            setTimeout(() => {
+              setShowCredenciaisPopup(true);
+            }, 100);
+          }
         }}
       />
 
@@ -712,6 +727,18 @@ export default function AdminClientesPage() {
           </div>
         </div>
       </Modal>
+
+      {showCredenciaisPopup && credenciaisData && (
+        <CredenciaisPopup
+          email={credenciaisData.email}
+          senha={credenciaisData.senha}
+          tipoCliente={credenciaisData.tipoCliente}
+          onClose={() => {
+            setShowCredenciaisPopup(false);
+            setCredenciaisData(null);
+          }}
+        />
+      )}
       </div>
     </>
   );

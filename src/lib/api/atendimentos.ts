@@ -288,6 +288,63 @@ export async function getAtendimentoByCliente(clienteId: string, userId?: string
   };
 }
 
+/**
+ * Busca todos os atendimentos de um cliente
+ * @param clienteId - ID do cliente
+ * @param userId - ID do usuário (opcional)
+ */
+export async function getAllAtendimentosByCliente(clienteId: string, userId?: string): Promise<Atendimento[]> {
+  if (!userId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+    userId = user.id;
+  }
+
+  const connectedInstances = await getConnectedInstances(userId);
+  const instanceIds = connectedInstances.map(inst => inst.id);
+
+  if (instanceIds.length === 0) {
+    return [];
+  }
+
+  // Buscar todos os atendimentos do cliente
+  const { data, error } = await supabase
+    .from('atendimentos_solicitado')
+    .select(`
+      *,
+      clientes (
+        nome,
+        telefone,
+        foto_perfil
+      ),
+      whatsapp_instances (
+        telefone
+      )
+    `)
+    .eq('cliente_id', clienteId)
+    .eq('usuario_id', userId)
+    .in('whatsapp_instance_id', instanceIds)
+    .order('updated_at', { ascending: false });
+
+  if (error || !data) {
+    return [];
+  }
+
+  return data.map((atendimento: any) => ({
+    id: atendimento.id,
+    cliente_id: atendimento.cliente_id,
+    cliente_nome: atendimento.clientes?.nome,
+    cliente_foto_perfil: atendimento.clientes?.foto_perfil || undefined,
+    telefone_cliente: atendimento.clientes?.telefone || '',
+    telefone_usuario: atendimento.whatsapp_instances?.telefone || '',
+    usuario_id: atendimento.usuario_id,
+    status: (atendimento.status || 'aberto') as StatusAtendimento,
+    created_at: atendimento.created_at,
+    updated_at: atendimento.updated_at,
+    resumo_conversa: atendimento.resumo_conversa || undefined,
+  }));
+}
+
 export async function getAtendimentoById(id: string): Promise<Atendimento | null> {
   // Buscar atendimento com joins
   const { data, error } = await supabase
