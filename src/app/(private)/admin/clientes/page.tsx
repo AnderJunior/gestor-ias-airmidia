@@ -753,10 +753,11 @@ export default function AdminClientesPage() {
 
     // Atualização otimista - atualizar UI imediatamente
     const faseAnterior = cliente.fase;
+    const novaFase = (columnId === 'teste' || columnId === 'producao') ? columnId as 'teste' | 'producao' : undefined;
     setClientesComStatus(prev => 
       prev.map(c => 
         c.id === draggedCard 
-          ? { ...c, fase: columnId }
+          ? { ...c, fase: novaFase }
           : c
       )
     );
