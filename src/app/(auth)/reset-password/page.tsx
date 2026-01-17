@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { updatePassword, signOut } from '@/lib/auth';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -19,7 +19,6 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState(false);
   const [validatingToken, setValidatingToken] = useState(true);
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
     // Processar o token de reset de senha da URL
