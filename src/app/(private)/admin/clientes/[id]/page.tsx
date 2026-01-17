@@ -1119,7 +1119,7 @@ export default function ClienteDetailPage() {
                       : null;
                     const temDocumento = !!base64DocumentoValido;
                     
-                    const temTexto = mensagem.conteudo && mensagem.conteudo.trim() !== '';
+                    const temTexto = mensagem.mensagem && mensagem.mensagem.trim() !== '';
                     const dataUriImagem = temImagem ? `data:image/jpeg;base64,${mensagem.base64_imagem}` : null;
                     const dataUriAudio = temAudio && base64AudioValido && typeof base64AudioValido === 'string'
                       ? `data:${detectarFormatoAudio(base64AudioValido)};base64,${base64AudioValido}` 
@@ -1186,7 +1186,7 @@ export default function ClienteDetailPage() {
                             
                             {temTexto && (
                               <p className="text-sm whitespace-pre-wrap break-words">
-                                {mensagem.conteudo}
+                                {mensagem.mensagem}
                               </p>
                             )}
 
