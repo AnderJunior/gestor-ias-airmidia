@@ -726,7 +726,8 @@ export default function ClienteDetailPage() {
   };
 
   // Formatar data e hora da mensagem
-  const formatarDataHora = (data: string) => {
+  const formatarDataHora = (data: string | undefined) => {
+    if (!data) return '';
     try {
       const hoje = new Date();
       const dataMsg = new Date(data);
@@ -1099,6 +1100,7 @@ export default function ClienteDetailPage() {
                   mensagens.map((mensagem: MensagemConversa) => {
                     const remetenteRaw = mensagem.remetente?.toLowerCase() || '';
                     const isCliente = remetenteRaw.includes('cliente') || remetenteRaw === 'cliente';
+                    const dataMensagem = mensagem.data_e_hora || mensagem.created_at;
                     
                     const base64ImagemValido = mensagem.base64_imagem && 
                       mensagem.base64_imagem.trim() !== '' && 
@@ -1157,7 +1159,7 @@ export default function ClienteDetailPage() {
                                     setImagemModal({
                                       src: dataUriImagem,
                                       remetente: isCliente ? cliente.nome || 'Cliente' : 'Você',
-                                      dataHora: formatarDataHora(mensagem.created_at),
+                                      dataHora: formatarDataHora(dataMensagem),
                                     });
                                     setZoom(1);
                                     setPosition({ x: 0, y: 0 });
@@ -1200,7 +1202,7 @@ export default function ClienteDetailPage() {
                             )}
                           </div>
                           <p className={`text-xs text-gray-500 pb-1 ${isCliente ? 'text-left' : 'text-right'}`}>
-                            {formatarDataHora(mensagem.created_at)}
+                            {formatarDataHora(dataMensagem)}
                           </p>
                         </div>
                       </div>
