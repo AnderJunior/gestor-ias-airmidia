@@ -1097,6 +1097,9 @@ export default function ClienteDetailPage() {
                   </div>
                 ) : (
                   mensagens.map((mensagem: MensagemConversa) => {
+                    const remetenteRaw = mensagem.remetente?.toLowerCase() || '';
+                    const isCliente = remetenteRaw.includes('cliente') || remetenteRaw === 'cliente';
+                    
                     const base64ImagemValido = mensagem.base64_imagem && 
                       mensagem.base64_imagem.trim() !== '' && 
                       mensagem.base64_imagem.trim().toUpperCase() !== 'EMPTY';
@@ -1128,12 +1131,12 @@ export default function ClienteDetailPage() {
                     return (
                       <div
                         key={mensagem.id}
-                        className={`flex ${mensagem.isCliente ? 'justify-start' : 'justify-end'}`}
+                        className={`flex ${isCliente ? 'justify-start' : 'justify-end'}`}
                       >
-                        <div className={`max-w-[70%] flex items-end gap-2 ${mensagem.isCliente ? 'flex-row' : 'flex-row-reverse'}`}>
+                        <div className={`max-w-[70%] flex items-end gap-2 ${isCliente ? 'flex-row' : 'flex-row-reverse'}`}>
                           <div
                             className={`rounded-2xl px-4 py-2 ${
-                              mensagem.isCliente
+                              isCliente
                                 ? 'bg-gray-800 text-white'
                                 : 'bg-gray-100 text-gray-900'
                             }`}
@@ -1153,7 +1156,7 @@ export default function ClienteDetailPage() {
                                   onClick={() => {
                                     setImagemModal({
                                       src: dataUriImagem,
-                                      remetente: mensagem.isCliente ? cliente.nome || 'Cliente' : 'Você',
+                                      remetente: isCliente ? cliente.nome || 'Cliente' : 'Você',
                                       dataHora: formatarDataHora(mensagem.created_at),
                                     });
                                     setZoom(1);
@@ -1179,7 +1182,7 @@ export default function ClienteDetailPage() {
                               <div className="mb-2">
                                 <DocumentoMessage
                                   base64Documento={base64DocumentoValido}
-                                  isCliente={mensagem.isCliente}
+                                  isCliente={isCliente}
                                 />
                               </div>
                             )}
@@ -1196,7 +1199,7 @@ export default function ClienteDetailPage() {
                               </p>
                             )}
                           </div>
-                          <p className={`text-xs text-gray-500 pb-1 ${mensagem.isCliente ? 'text-left' : 'text-right'}`}>
+                          <p className={`text-xs text-gray-500 pb-1 ${isCliente ? 'text-left' : 'text-right'}`}>
                             {formatarDataHora(mensagem.created_at)}
                           </p>
                         </div>
