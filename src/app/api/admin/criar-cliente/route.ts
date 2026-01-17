@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { nome, telefone_ia, tipo_marcacao, email, senha } = body;
+    const { nome, telefone_ia, tipo_marcacao, email, senha, fase } = body;
 
     // Validações
     if (!nome || !telefone_ia || !tipo_marcacao || !email || !senha) {
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
         telefone_ia,
         tipo_marcacao,
         tipo: 'cliente',
-        fase: 'teste',
+        fase: fase || 'teste', // Usar fase fornecida ou padrão 'teste'
         ativo: true,
       })
       .select()

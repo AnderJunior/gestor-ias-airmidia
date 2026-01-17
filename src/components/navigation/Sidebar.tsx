@@ -105,7 +105,11 @@ export function Sidebar() {
       <nav className="flex-1 p-6 overflow-y-auto scrollbar-hide">
         <ul className="space-y-2">
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            // Verificar se o item está ativo, incluindo sub-rotas para Clientes
+            let isActive = pathname === item.href;
+            if (item.href === ROUTES.ADMIN_CLIENTES) {
+              isActive = pathname.startsWith('/admin/clientes/') || pathname === ROUTES.ADMIN_CLIENTES;
+            }
             return (
               <li key={item.href}>
                 <Link

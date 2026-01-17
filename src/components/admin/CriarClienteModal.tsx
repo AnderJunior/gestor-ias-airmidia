@@ -11,9 +11,10 @@ interface CriarClienteModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (credenciais?: { email: string; senha: string; tipoCliente: 'atendimento' | 'agendamento' }) => void;
+  faseInicial?: string;
 }
 
-export function CriarClienteModal({ isOpen, onClose, onSuccess }: CriarClienteModalProps) {
+export function CriarClienteModal({ isOpen, onClose, onSuccess, faseInicial }: CriarClienteModalProps) {
   const [nome, setNome] = useState('');
   const [telefoneAtendimento, setTelefoneAtendimento] = useState('');
   const [telefoneFormatado, setTelefoneFormatado] = useState('');
@@ -108,6 +109,7 @@ export function CriarClienteModal({ isOpen, onClose, onSuccess }: CriarClienteMo
           tipo_marcacao: tipoCliente,
           email,
           senha,
+          fase: faseInicial,
         }),
       });
 

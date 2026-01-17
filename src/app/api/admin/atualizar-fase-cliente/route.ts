@@ -81,9 +81,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!fase || !['teste', 'producao'].includes(fase)) {
+    if (!fase || typeof fase !== 'string' || fase.trim() === '') {
       return NextResponse.json(
-        { error: 'Fase inválida. Valores permitidos: teste, producao' },
+        { error: 'Fase é obrigatória e deve ser uma string válida' },
         { status: 400 }
       );
     }
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
       { 
         success: true,
         cliente: updatedCliente,
-        message: `Fase do cliente atualizada para ${fase === 'producao' ? 'produção' : 'teste'} com sucesso`
+        message: `Fase do cliente atualizada para ${fase} com sucesso`
       },
       { status: 200 }
     );

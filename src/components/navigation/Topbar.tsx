@@ -19,7 +19,13 @@ const pageTitles: Record<string, string> = {
 
 export function Topbar() {
   const pathname = usePathname();
-  const pageTitle = pageTitles[pathname] || 'Dashboard';
+  
+  // Verificar se é a página de detalhes do cliente
+  const isClienteDetailPage = pathname.startsWith('/admin/clientes/') && pathname !== ROUTES.ADMIN_CLIENTES;
+  
+  const pageTitle = isClienteDetailPage 
+    ? 'Detalhes do cliente'
+    : (pageTitles[pathname] || 'Dashboard');
   const { unreadCount } = useNotifications();
   const { user } = useAuth();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
