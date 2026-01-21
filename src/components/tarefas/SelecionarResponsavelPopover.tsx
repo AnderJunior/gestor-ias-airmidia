@@ -145,6 +145,20 @@ export function SelecionarResponsavelPopover({
     admin.nome?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Buscar o Usuario completo se responsavelAtual for ResponsavelBasico
+  const getResponsavelCompleto = (): Usuario | null => {
+    if (!responsavelAtual) return null;
+    
+    // Se já for Usuario completo, retornar diretamente
+    if ('telefone_ia' in responsavelAtual || 'created_at' in responsavelAtual) {
+      return responsavelAtual as Usuario;
+    }
+    
+    // Se for ResponsavelBasico, buscar na lista de administradores
+    const adminCompleto = administradores.find(admin => admin.id === responsavelAtual.id);
+    return adminCompleto || null;
+  };
+
   const getInitials = (name: string | null) => {
     if (!name) return '?';
     return name
@@ -222,7 +236,8 @@ export function SelecionarResponsavelPopover({
                 <div className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors group">
                   <button
                     onClick={() => {
-                      onSelect(responsavelAtual);
+                      const responsavelCompleto = getResponsavelCompleto();
+                      onSelect(responsavelCompleto);
                       onClose();
                     }}
                     className="flex items-center gap-3 flex-1 min-w-0 text-left"
