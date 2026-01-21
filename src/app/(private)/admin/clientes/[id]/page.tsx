@@ -352,7 +352,7 @@ function TarefaResponsavelButton({
   showPopover: boolean;
   onOpen: () => void;
   onClose: () => void;
-  onSelect: (admin: Usuario) => void;
+  onSelect: (admin: Usuario | null) => void;
 }) {
   const buttonRef = useRef<HTMLButtonElement>(null);
 
