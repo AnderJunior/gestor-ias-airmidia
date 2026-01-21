@@ -73,6 +73,7 @@ export default function AdminClientesPage() {
   const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
   const [editColumnName, setEditColumnName] = useState('');
   const [editColumnColor, setEditColumnColor] = useState('#6b7280');
+  const [updatingFase, setUpdatingFase] = useState(false);
   const kanbanScrollRef = useRef<HTMLDivElement>(null);
   const scrollAnimationRef = useRef<number | null>(null);
   const lastScrollTimeRef = useRef<number>(0);
