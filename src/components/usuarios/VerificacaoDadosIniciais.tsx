@@ -15,16 +15,28 @@ export function VerificacaoDadosIniciais() {
     return !!(usuario?.nome && usuario?.telefone_ia);
   }, [usuario]);
 
+  // Verificar se o usuário é cliente (não administrador)
+  const isCliente = useMemo(() => {
+    // Se não tem tipo definido, assume que é cliente (comportamento padrão)
+    // Se tem tipo e é 'cliente', retorna true
+    // Se tem tipo e é 'administracao', retorna false
+    return usuario?.tipo !== 'administracao';
+  }, [usuario?.tipo]);
+
   const verificando = authLoading || usuarioLoading;
 
   useEffect(() => {
-    if (!verificando && !dadosCompletos && usuario !== null) {
-      // Só mostrar modal se não estiver carregando e os dados não estiverem completos
+    // Só mostrar modal se:
+    // 1. Não estiver carregando
+    // 2. Os dados não estiverem completos
+    // 3. O usuário for cliente (não administrador)
+    // 4. O usuário existir
+    if (!verificando && !dadosCompletos && usuario !== null && isCliente) {
       setMostrarModal(true);
-    } else if (dadosCompletos) {
+    } else if (dadosCompletos || !isCliente) {
       setMostrarModal(false);
     }
-  }, [verificando, dadosCompletos, usuario]);
+  }, [verificando, dadosCompletos, usuario, isCliente]);
 
   const handleComplete = () => {
     setMostrarModal(false);
@@ -33,7 +45,8 @@ export function VerificacaoDadosIniciais() {
   };
 
   // Não renderiza nada enquanto está verificando ou se não há usuário
-  if (verificando || !user) {
+  // Também não renderiza se o usuário for administrador
+  if (verificando || !user || !isCliente) {
     return null;
   }
 

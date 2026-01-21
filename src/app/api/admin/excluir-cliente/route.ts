@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { triggerWebhookExcluirCliente } from '@/lib/api/webhookTrigger';
 
 // Função para obter cliente Supabase com anon key
 function getSupabaseClient() {
@@ -81,10 +82,11 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Verificar se o cliente existe e não é administrador
+    // Buscar TODAS as informações do cliente ANTES de excluir qualquer coisa
+    // Isso é necessário para enviar o webhook com as informações corretas
     const { data: cliente, error: clienteError } = await supabaseAdmin
       .from('usuarios')
-      .select('id, tipo')
+      .select('id, tipo, nome, telefone_ia, fase')
       .eq('id', clienteId)
       .single();
 
@@ -102,7 +104,49 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Excluir todos os dados relacionados antes de excluir o usuário
+    // Buscar etapa atual do kanban se existir
+    // A fase do cliente é o ID da coluna do kanban (a coluna é 'name', não 'nome')
+    let etapaAtual = null;
+    let etapaAtualId = null;
+    if (cliente.fase) {
+      const { data: kanbanColuna } = await supabaseAdmin
+        .from('kanban_colunas')
+        .select('id, name')
+        .eq('id', cliente.fase)
+        .maybeSingle();
+      
+      if (kanbanColuna) {
+        etapaAtual = kanbanColuna.name;
+        etapaAtualId = kanbanColuna.id;
+      } else if (cliente.fase === 'teste' || cliente.fase === 'producao') {
+        // Se for uma fase padrão, usar o nome da fase
+        etapaAtual = cliente.fase === 'teste' ? 'Teste' : 'Produção';
+        etapaAtualId = cliente.fase;
+      } else {
+        // Se não encontrou e não é fase padrão, usar o valor da fase como fallback
+        etapaAtual = cliente.fase;
+        etapaAtualId = cliente.fase;
+      }
+    }
+
+    // Acionar webhook ANTES de excluir - passar o usuario_id do admin que está excluindo
+    // Isso garante que as informações sejam enviadas corretamente antes da exclusão
+    try {
+      await triggerWebhookExcluirCliente({
+        id: cliente.id,
+        nome: cliente.nome || '',
+        telefone: cliente.telefone_ia || '',
+        foto_perfil: undefined,
+        usuario_id: clienteId,
+        etapa_atual: etapaAtual,
+        etapa_atual_id: etapaAtualId,
+      }, user.id); // Passar o usuario_id do admin
+    } catch (err) {
+      console.error('Erro ao acionar webhook excluir_cliente:', err);
+      // Continuar com a exclusão mesmo se o webhook falhar
+    }
+
+    // Excluir todos os dados relacionados APÓS enviar o webhook
     // Ordem: agendamentos -> atendimentos_solicitado -> clientes -> whatsapp_instances -> usuarios (via Auth)
     
     // 1. Excluir agendamentos do usuário

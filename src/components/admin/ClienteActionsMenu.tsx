@@ -6,13 +6,13 @@ import { MoreVertical } from 'lucide-react';
 
 interface ClienteActionsMenuProps {
   fase?: 'teste' | 'producao';
-  onPublicarAgente: () => void;
+  ativo?: boolean;
   onEditInstance: () => void;
   onEditCliente: () => void;
   onDesativar: () => void;
 }
 
-export function ClienteActionsMenu({ fase, onPublicarAgente, onEditInstance, onEditCliente, onDesativar }: ClienteActionsMenuProps) {
+export function ClienteActionsMenu({ fase, ativo, onEditInstance, onEditCliente, onDesativar }: ClienteActionsMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
@@ -77,12 +77,6 @@ export function ClienteActionsMenu({ fase, onPublicarAgente, onEditInstance, onE
     >
       <div className="py-1">
         <button
-          onClick={() => handleOptionClick(onPublicarAgente)}
-          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-        >
-          {fase === 'producao' ? 'Voltar para teste' : 'Publicar Agente'}
-        </button>
-        <button
           onClick={() => handleOptionClick(onEditInstance)}
           className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
         >
@@ -98,7 +92,7 @@ export function ClienteActionsMenu({ fase, onPublicarAgente, onEditInstance, onE
           onClick={() => handleOptionClick(onDesativar)}
           className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
         >
-          Desativar Cliente
+          {ativo === false ? 'Ativar Cliente' : 'Desativar Cliente'}
         </button>
       </div>
     </div>

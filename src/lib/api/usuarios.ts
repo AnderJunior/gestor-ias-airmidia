@@ -4,7 +4,7 @@ export interface Usuario {
   id: string;
   nome: string | null;
   telefone_ia: string | null;
-  tipo_marcacao?: 'atendimento' | 'agendamento';
+  tipo_marcacao?: 'atendimento' | 'agendamento' | 'administracao';
   tipo?: 'cliente' | 'administracao';
   fase?: 'teste' | 'producao';
   ativo?: boolean;
@@ -253,5 +253,23 @@ export async function getEstatisticasClientes(): Promise<EstatisticasClientes> {
     totalTeste,
     totalProducao,
   };
+}
+
+/**
+ * Busca todos os usuários administradores
+ */
+export async function getAdministradores(): Promise<Usuario[]> {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('*')
+    .eq('tipo', 'administracao')
+    .order('nome', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching administradores:', error);
+    throw error;
+  }
+
+  return data || [];
 }
 

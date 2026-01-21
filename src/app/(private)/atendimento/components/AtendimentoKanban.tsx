@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Atendimento, Agendamento } from '@/types/domain';
 import { formatTimeAgo } from '@/lib/utils/dates';
@@ -53,15 +53,44 @@ export function AtendimentoKanban({
   const router = useRouter();
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [draggedItemStatus, setDraggedItemStatus] = useState<KanbanStatus | 'aberto' | 'confirmado' | null>(null);
-  const [updating, setUpdating] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<KanbanStatus | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<{ id: string; status: KanbanStatus } | null>(null);
+  // Estado para atualizações otimistas: mapeia ID do item para o novo status
+  const [optimisticUpdates, setOptimisticUpdates] = useState<Map<string, KanbanStatus>>(new Map());
 
   const isAgendamento = tipoMarcacao === 'agendamento';
   const columns = isAgendamento ? columnsAgendamento : columnsAtendimento;
 
-  // Agrupar dados por status baseado no tipo
+  // Limpar atualizações otimistas apenas quando os dados realmente mudarem com o status correto
+  useEffect(() => {
+    setOptimisticUpdates(prev => {
+      const newMap = new Map(prev);
+      // Remover apenas as atualizações otimistas que já foram sincronizadas
+      // (ou seja, quando o status no servidor corresponde ao status otimista)
+      for (const [itemId, optimisticStatus] of prev.entries()) {
+        if (isAgendamento) {
+          const agendamento = agendamentos.find(a => a.id === itemId);
+          if (agendamento) {
+            // Para coluna "agendado", aceita tanto 'agendado' quanto 'confirmado'
+            if (optimisticStatus === 'agendado' && (agendamento.status === 'agendado' || agendamento.status === 'confirmado')) {
+              newMap.delete(itemId);
+            } else if (agendamento.status === optimisticStatus) {
+              newMap.delete(itemId);
+            }
+          }
+        } else {
+          const atendimento = atendimentos.find(a => a.id === itemId);
+          if (atendimento && atendimento.status === optimisticStatus) {
+            newMap.delete(itemId);
+          }
+        }
+      }
+      return newMap;
+    });
+  }, [atendimentos, agendamentos, isAgendamento]);
+
+  // Agrupar dados por status baseado no tipo, aplicando atualizações otimistas
   const dadosPorStatus = useMemo<{
     agendado?: Agendamento[];
     concluido?: Agendamento[];
@@ -70,25 +99,44 @@ export function AtendimentoKanban({
     encerrado?: Atendimento[];
   }>(() => {
     if (isAgendamento) {
-      return {
-        agendado: agendamentos.filter((a) => a.status === 'agendado' || a.status === 'confirmado'),
-        concluido: agendamentos.filter((a) => a.status === 'concluido'),
-        cancelado: agendamentos.filter((a) => a.status === 'cancelado'),
-      };
+      // Aplicar atualizações otimistas e agrupar diretamente
+      const agendados: Agendamento[] = [];
+      const concluidos: Agendamento[] = [];
+      const cancelados: Agendamento[] = [];
+
+      agendamentos.forEach(agendamento => {
+        const optimisticStatus = optimisticUpdates.get(agendamento.id);
+        const finalStatus = optimisticStatus || agendamento.status;
+        
+        if (finalStatus === 'agendado' || finalStatus === 'confirmado') {
+          agendados.push({ ...agendamento, status: finalStatus as any });
+        } else if (finalStatus === 'concluido') {
+          concluidos.push({ ...agendamento, status: finalStatus as any });
+        } else if (finalStatus === 'cancelado') {
+          cancelados.push({ ...agendamento, status: finalStatus as any });
+        }
+      });
+
+      return { agendado: agendados, concluido: concluidos, cancelado: cancelados };
     } else {
-      const atendimentosPorStatus = {
-        em_andamento: atendimentos.filter((a) => a.status === 'em_andamento'),
-        encerrado: atendimentos.filter((a) => a.status === 'encerrado'),
-      };
-      // Atendimentos sem status definido (aberto) vão para "em_andamento" por padrão
-      const atendimentosAbertos = atendimentos.filter((a) => a.status === 'aberto' || !a.status);
-      atendimentosPorStatus.em_andamento = [
-        ...atendimentosPorStatus.em_andamento,
-        ...atendimentosAbertos,
-      ];
-      return atendimentosPorStatus;
+      // Aplicar atualizações otimistas e agrupar diretamente
+      const emAndamento: Atendimento[] = [];
+      const encerrados: Atendimento[] = [];
+
+      atendimentos.forEach(atendimento => {
+        const optimisticStatus = optimisticUpdates.get(atendimento.id);
+        const finalStatus = optimisticStatus || atendimento.status;
+        
+        if (finalStatus === 'em_andamento' || finalStatus === 'aberto' || !finalStatus) {
+          emAndamento.push({ ...atendimento, status: finalStatus === 'aberto' || !finalStatus ? 'em_andamento' as any : finalStatus as any });
+        } else if (finalStatus === 'encerrado') {
+          encerrados.push({ ...atendimento, status: finalStatus as any });
+        }
+      });
+
+      return { em_andamento: emAndamento, encerrado: encerrados };
     }
-  }, [atendimentos, agendamentos, isAgendamento]);
+  }, [atendimentos, agendamentos, isAgendamento, optimisticUpdates]);
 
   const handleDragStart = (e: React.DragEvent, itemId: string, currentStatus: string) => {
     setDraggedItem(itemId);
@@ -131,35 +179,53 @@ export function AtendimentoKanban({
       // Não fazer nada se já estiver no status de destino
       const agendamento = agendamentos.find(a => a.id === draggedItem);
       if (agendamento) {
+        // Verificar status atual considerando atualizações otimistas
+        const currentStatus = optimisticUpdates.get(draggedItem) || agendamento.status;
+        
         // Se o destino for "agendado", verificar se já está em "agendado" ou "confirmado"
-        if (targetStatus === 'agendado' && (agendamento.status === 'agendado' || agendamento.status === 'confirmado')) {
+        if (targetStatus === 'agendado' && (currentStatus === 'agendado' || currentStatus === 'confirmado')) {
           setDraggedItem(null);
           setDraggedItemStatus(null);
           return;
         }
         // Para outros status, verificar se já está no status de destino
-        if (targetStatus !== 'agendado' && agendamento.status === targetStatus) {
+        if (targetStatus !== 'agendado' && currentStatus === targetStatus) {
           setDraggedItem(null);
           setDraggedItemStatus(null);
           return;
         }
       }
 
-      // Atualizar status do agendamento diretamente
-      setUpdating(draggedItem);
-      try {
-        await updateAgendamentoStatus(draggedItem, targetStatus as 'agendado' | 'confirmado' | 'cancelado' | 'concluido');
-        if (onStatusUpdate) {
-          onStatusUpdate();
-        }
-      } catch (error) {
-        console.error('Erro ao atualizar status:', error);
-        alert('Erro ao atualizar status do agendamento. Tente novamente.');
-      } finally {
-        setUpdating(null);
-        setDraggedItem(null);
-        setDraggedItemStatus(null);
-      }
+      // ATUALIZAÇÃO OTIMISTA: atualizar UI imediatamente
+      // Para coluna "agendado", sempre usar 'agendado' como status otimista
+      const finalStatus = targetStatus === 'agendado' ? 'agendado' : targetStatus;
+      setOptimisticUpdates(prev => {
+        const newMap = new Map(prev);
+        newMap.set(draggedItem, finalStatus);
+        return newMap;
+      });
+      setDraggedItem(null);
+      setDraggedItemStatus(null);
+
+      // Atualizar no Supabase em background (sem bloquear)
+      // Para coluna "agendado", sempre atualizar para 'agendado' no servidor
+      updateAgendamentoStatus(draggedItem, finalStatus as 'agendado' | 'confirmado' | 'cancelado' | 'concluido')
+        .then(() => {
+          // Sincronizar dados em background
+          if (onStatusUpdate) {
+            onStatusUpdate();
+          }
+        })
+        .catch((error) => {
+          console.error('Erro ao atualizar status:', error);
+          // Reverter atualização otimista em caso de erro
+          setOptimisticUpdates(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(draggedItem);
+            return newMap;
+          });
+          alert('Erro ao atualizar status do agendamento. Tente novamente.');
+        });
     } else {
       // Validar se pode mover para o status de destino (atendimentos)
       if (draggedItemStatus !== 'em_andamento' && draggedItemStatus !== 'aberto') {
@@ -170,10 +236,14 @@ export function AtendimentoKanban({
 
       // Não fazer nada se já estiver no status de destino
       const atendimento = atendimentos.find(a => a.id === draggedItem);
-      if (atendimento && atendimento.status === targetStatus) {
-        setDraggedItem(null);
-        setDraggedItemStatus(null);
-        return;
+      if (atendimento) {
+        // Verificar status atual considerando atualizações otimistas
+        const currentStatus = optimisticUpdates.get(draggedItem) || atendimento.status;
+        if (currentStatus === targetStatus) {
+          setDraggedItem(null);
+          setDraggedItemStatus(null);
+          return;
+        }
       }
 
       // Se estiver movendo para "encerrado", mostrar modal de confirmação
@@ -185,45 +255,72 @@ export function AtendimentoKanban({
         return;
       }
 
-      // Para outros status, atualizar diretamente
-      setUpdating(draggedItem);
-      try {
-        await updateAtendimentoStatus(draggedItem, targetStatus as 'em_andamento' | 'encerrado');
-        if (onStatusUpdate) {
-          onStatusUpdate();
-        }
-      } catch (error) {
-        console.error('Erro ao atualizar status:', error);
-        alert('Erro ao atualizar status do atendimento. Tente novamente.');
-      } finally {
-        setUpdating(null);
-        setDraggedItem(null);
-        setDraggedItemStatus(null);
-      }
+      // ATUALIZAÇÃO OTIMISTA: atualizar UI imediatamente
+      setOptimisticUpdates(prev => {
+        const newMap = new Map(prev);
+        newMap.set(draggedItem, targetStatus);
+        return newMap;
+      });
+      setDraggedItem(null);
+      setDraggedItemStatus(null);
+
+      // Atualizar no Supabase em background (sem bloquear)
+      updateAtendimentoStatus(draggedItem, targetStatus as 'em_andamento' | 'encerrado')
+        .then(() => {
+          // Sincronizar dados em background
+          if (onStatusUpdate) {
+            onStatusUpdate();
+          }
+        })
+        .catch((error) => {
+          console.error('Erro ao atualizar status:', error);
+          // Reverter atualização otimista em caso de erro
+          setOptimisticUpdates(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(draggedItem);
+            return newMap;
+          });
+          alert('Erro ao atualizar status do atendimento. Tente novamente.');
+        });
     }
   };
 
   const handleConfirmFinalizacao = async () => {
     if (!pendingUpdate) return;
 
-    setUpdating(pendingUpdate.id);
-    try {
-      if (isAgendamento) {
-        await updateAgendamentoStatus(pendingUpdate.id, pendingUpdate.status as 'agendado' | 'confirmado' | 'cancelado' | 'concluido');
-      } else {
-        await updateAtendimentoStatus(pendingUpdate.id, pendingUpdate.status as 'em_andamento' | 'encerrado');
-      }
-      if (onStatusUpdate) {
-        onStatusUpdate();
-      }
-      setShowConfirmModal(false);
-      setPendingUpdate(null);
-    } catch (error) {
-      console.error('Erro ao atualizar status:', error);
-      alert(`Erro ao atualizar status do ${isAgendamento ? 'agendamento' : 'atendimento'}. Tente novamente.`);
-    } finally {
-      setUpdating(null);
-    }
+    // ATUALIZAÇÃO OTIMISTA: atualizar UI imediatamente
+    setOptimisticUpdates(prev => {
+      const newMap = new Map(prev);
+      newMap.set(pendingUpdate.id, pendingUpdate.status);
+      return newMap;
+    });
+    setShowConfirmModal(false);
+    const updateId = pendingUpdate.id;
+    const updateStatus = pendingUpdate.status;
+    setPendingUpdate(null);
+
+    // Atualizar no Supabase em background (sem bloquear)
+    const updatePromise = isAgendamento
+      ? updateAgendamentoStatus(updateId, updateStatus as 'agendado' | 'confirmado' | 'cancelado' | 'concluido')
+      : updateAtendimentoStatus(updateId, updateStatus as 'em_andamento' | 'encerrado');
+
+    updatePromise
+      .then(() => {
+        // Sincronizar dados em background
+        if (onStatusUpdate) {
+          onStatusUpdate();
+        }
+      })
+      .catch((error) => {
+        console.error('Erro ao atualizar status:', error);
+        // Reverter atualização otimista em caso de erro
+        setOptimisticUpdates(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(updateId);
+          return newMap;
+        });
+        alert(`Erro ao atualizar status do ${isAgendamento ? 'agendamento' : 'atendimento'}. Tente novamente.`);
+      });
   };
 
   const handleCancelFinalizacao = () => {
@@ -317,16 +414,14 @@ export function AtendimentoKanban({
             <Button
               variant="secondary"
               onClick={handleCancelFinalizacao}
-              disabled={updating === pendingUpdate?.id}
             >
               Cancelar
             </Button>
             <Button
               variant="primary"
               onClick={handleConfirmFinalizacao}
-              disabled={updating === pendingUpdate?.id}
             >
-              {updating === pendingUpdate?.id ? (isAgendamento ? 'Atualizando...' : 'Finalizando...') : 'Confirmar'}
+              Confirmar
             </Button>
           </div>
         </div>
@@ -389,7 +484,6 @@ export function AtendimentoKanban({
               ) : (
                 columnItems.map((item) => {
                   const isDragging = draggedItem === item.id;
-                  const isUpdating = updating === item.id;
                   
                   const itemData = item as Atendimento | Agendamento;
                   const clienteNome = itemData.cliente_nome;
@@ -409,7 +503,7 @@ export function AtendimentoKanban({
                   return (
                     <div
                       key={item.id}
-                      draggable={!isUpdating && canDrag}
+                      draggable={canDrag}
                       onDragStart={(e) => handleDragStart(e, item.id, status || (isAgendamento ? 'agendado' : 'aberto'))}
                       onDragEnd={() => {
                         setDraggedItem(null);
@@ -422,9 +516,8 @@ export function AtendimentoKanban({
                       }}
                       className={`
                         bg-white border border-gray-200 rounded-lg p-4 transition-all
-                        ${isDragging ? 'opacity-50 cursor-grabbing' : ''}
-                        ${isUpdating ? 'opacity-50 cursor-wait' : 'cursor-pointer hover:shadow-md'}
-                        ${!isUpdating && canDrag ? 'hover:border-gray-400' : 'cursor-not-allowed opacity-60'}
+                        ${isDragging ? 'opacity-50 cursor-grabbing' : 'cursor-pointer hover:shadow-md'}
+                        ${canDrag ? 'hover:border-gray-400' : 'cursor-not-allowed opacity-60'}
                       `}
                     >
                       {/* Primeira linha: Foto Cliente | Nome | Ícone WhatsApp */}

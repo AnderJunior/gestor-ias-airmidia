@@ -12,10 +12,13 @@ import { fazerLogoutInstancia } from '@/lib/api/evolution';
 import { atualizarNomeUsuario } from '@/lib/api/usuarios';
 import { CalendarIcon, X } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
+import { WebhooksConfigSection } from '@/components/configuracoes/WebhooksConfigSection';
+import { AdministradoresConfigSection } from '@/components/configuracoes/AdministradoresConfigSection';
 
 export default function ConfiguracoesPage() {
   const { user } = useAuth();
   const { usuario, refetch } = useUsuario();
+  const [abaAtiva, setAbaAtiva] = useState<'perfil' | 'webhook' | 'administradores'>('perfil');
   const [nome, setNome] = useState('');
   const [isEditingNome, setIsEditingNome] = useState(false);
   const [loadingNome, setLoadingNome] = useState(false);
@@ -233,13 +236,45 @@ export default function ConfiguracoesPage() {
 
   return (
     <div className="w-full space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Configurações</h1>
-        <p className="text-gray-600 mt-2">Gerencie suas informações pessoais e conexões</p>
+      {/* Abas */}
+      <div className="inline-flex items-center bg-gray-100 rounded-lg p-1">
+        <button
+          onClick={() => setAbaAtiva('perfil')}
+          className={`flex-1 px-4 py-2 transition-all rounded-md text-center ${
+            abaAtiva === 'perfil'
+              ? 'bg-white text-gray-900 font-semibold shadow-sm'
+              : 'bg-transparent text-gray-600 font-normal'
+          }`}
+        >
+          Perfil
+        </button>
+        <button
+          onClick={() => setAbaAtiva('webhook')}
+          className={`flex-1 px-4 py-2 transition-all rounded-md text-center ${
+            abaAtiva === 'webhook'
+              ? 'bg-white text-gray-900 font-semibold shadow-sm'
+              : 'bg-transparent text-gray-600 font-normal'
+          }`}
+        >
+          Webhook
+        </button>
+        <button
+          onClick={() => setAbaAtiva('administradores')}
+          className={`flex-1 px-4 py-2 transition-all rounded-md text-center ${
+            abaAtiva === 'administradores'
+              ? 'bg-white text-gray-900 font-semibold shadow-sm'
+              : 'bg-transparent text-gray-600 font-normal'
+          }`}
+        >
+          Administradores
+        </button>
       </div>
 
-      {/* Perfil */}
-      <Card title="Perfil" className="w-full">
+      {/* Conteúdo da aba Perfil */}
+      {abaAtiva === 'perfil' && (
+        <>
+          {/* Perfil */}
+          <Card title="Perfil" className="w-full">
         <div className="space-y-6">
           {/* Foto e Nome */}
           <div className="flex items-start gap-6">
@@ -396,6 +431,18 @@ export default function ConfiguracoesPage() {
           </div>
         </div>
       </Card>
+        </>
+      )}
+
+      {/* Conteúdo da aba Webhook */}
+      {abaAtiva === 'webhook' && (
+        <WebhooksConfigSection />
+      )}
+
+      {/* Conteúdo da aba Administradores */}
+      {abaAtiva === 'administradores' && (
+        <AdministradoresConfigSection />
+      )}
 
       {/* Modal WhatsApp */}
       {instanceName && telefoneUsuario && (

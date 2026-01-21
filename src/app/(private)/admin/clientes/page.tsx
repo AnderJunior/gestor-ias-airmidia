@@ -24,6 +24,7 @@ import { ClienteActionsMenu } from '@/components/admin/ClienteActionsMenu';
 import { ColunaActionsMenu } from '@/components/admin/ColunaActionsMenu';
 import { EditarNomeInstanciaModal } from '@/components/admin/EditarNomeInstanciaModal';
 import { EditarClienteModal } from '@/components/admin/EditarClienteModal';
+import { getContagemTarefasPendentesPorClientes } from '@/lib/api/tarefas';
 
 interface ClienteComStatus extends Usuario {
   statusEvolution?: 'conectado' | 'desconectado' | 'conectando' | 'erro';
@@ -42,18 +43,16 @@ export default function AdminClientesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showConfirmDeleteModal, setShowConfirmDeleteModal] = useState(false);
+  const [showAtivarModal, setShowAtivarModal] = useState(false);
   const [clienteParaExcluir, setClienteParaExcluir] = useState<ClienteComStatus | null>(null);
   const [nomeConfirmacao, setNomeConfirmacao] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
+  const [activating, setActivating] = useState(false);
   const [showEditInstanceModal, setShowEditInstanceModal] = useState(false);
   const [showEditClienteModal, setShowEditClienteModal] = useState(false);
   const [clienteSelecionado, setClienteSelecionado] = useState<ClienteComStatus | null>(null);
   const [instanciaSelecionada, setInstanciaSelecionada] = useState<WhatsAppInstance | null>(null);
-  const [showPublicarModal, setShowPublicarModal] = useState(false);
-  const [showVoltarTesteModal, setShowVoltarTesteModal] = useState(false);
-  const [clienteParaPublicar, setClienteParaPublicar] = useState<ClienteComStatus | null>(null);
-  const [updatingFase, setUpdatingFase] = useState(false);
   const [showCredenciaisPopup, setShowCredenciaisPopup] = useState(false);
   const [credenciaisData, setCredenciaisData] = useState<{
     email: string;
@@ -78,6 +77,7 @@ export default function AdminClientesPage() {
   const scrollAnimationRef = useRef<number | null>(null);
   const lastScrollTimeRef = useRef<number>(0);
   const scrollDirectionRef = useRef<'left' | 'right' | null>(null);
+  const [tarefasPendentesPorCliente, setTarefasPendentesPorCliente] = useState<Record<string, number>>({});
 
   // Carregar colunas do Kanban do Supabase
   useEffect(() => {
@@ -130,6 +130,16 @@ export default function AdminClientesPage() {
 
       setClientesComStatus(clientesComStatusData);
       setLoadingStatus(false);
+
+      // Buscar contagens de tarefas pendentes
+      try {
+        const clienteIds = clientesComStatusData.map((c) => c.id);
+        const contagens = await getContagemTarefasPendentesPorClientes(clienteIds);
+        setTarefasPendentesPorCliente(contagens);
+      } catch (error) {
+        console.error('Erro ao buscar contagens de tarefas pendentes:', error);
+        setTarefasPendentesPorCliente({});
+      }
     }
 
     if (!loading) {
@@ -349,6 +359,7 @@ export default function AdminClientesPage() {
         },
         body: JSON.stringify({
           clienteId: clienteParaExcluir.id,
+          ativo: false,
         }),
       });
 
@@ -366,6 +377,46 @@ export default function AdminClientesPage() {
       alert(err.message || 'Erro ao desativar cliente. Tente novamente.');
     } finally {
       setDeactivating(false);
+    }
+  };
+
+  const handleAtivar = async () => {
+    if (!clienteParaExcluir) return;
+
+    setActivating(true);
+    try {
+      // Obter token de autenticação
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Não autenticado');
+      }
+
+      const response = await fetch('/api/admin/desativar-cliente', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          clienteId: clienteParaExcluir.id,
+          ativo: true,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao ativar cliente');
+      }
+
+      // Fechar modal e atualizar lista
+      setShowAtivarModal(false);
+      setClienteParaExcluir(null);
+      refetch();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao ativar cliente. Tente novamente.');
+    } finally {
+      setActivating(false);
     }
   };
 
@@ -396,100 +447,17 @@ export default function AdminClientesPage() {
   };
 
   const handleDesativarCliente = (cliente: ClienteComStatus) => {
-    setClienteParaExcluir(cliente);
-    setShowDeleteModal(true);
-  };
-
-  const handlePublicarAgente = (cliente: ClienteComStatus) => {
-    setClienteParaPublicar(cliente);
-    if (cliente.fase === 'producao') {
-      setShowVoltarTesteModal(true);
+    // Se o cliente estiver inativo, mostrar modal de ativação
+    if (cliente.ativo === false) {
+      setClienteParaExcluir(cliente);
+      setShowAtivarModal(true);
     } else {
-      setShowPublicarModal(true);
+      // Se estiver ativo, mostrar modal de desativar/excluir
+      setClienteParaExcluir(cliente);
+      setShowDeleteModal(true);
     }
   };
 
-  const handleConfirmarPublicar = async () => {
-    if (!clienteParaPublicar) return;
-
-    setUpdatingFase(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('Não autenticado');
-      }
-
-      const response = await fetch('/api/admin/atualizar-fase-cliente', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          clienteId: clienteParaPublicar.id,
-          fase: 'producao',
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao publicar agente');
-      }
-
-      setShowPublicarModal(false);
-      setClienteParaPublicar(null);
-      refetch();
-    } catch (err: any) {
-      alert(err.message || 'Erro ao publicar agente. Tente novamente.');
-    } finally {
-      setUpdatingFase(false);
-    }
-  };
-
-  const handleConfirmarVoltarTeste = async () => {
-    if (!clienteParaPublicar) return;
-
-    setUpdatingFase(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('Não autenticado');
-      }
-
-      const response = await fetch('/api/admin/atualizar-fase-cliente', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          clienteId: clienteParaPublicar.id,
-          fase: 'teste',
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao voltar para teste');
-      }
-
-      setShowVoltarTesteModal(false);
-      setClienteParaPublicar(null);
-      refetch();
-    } catch (err: any) {
-      alert(err.message || 'Erro ao voltar para teste. Tente novamente.');
-    } finally {
-      setUpdatingFase(false);
-    }
-  };
-
-  const handleCancelPublicar = () => {
-    setShowPublicarModal(false);
-    setShowVoltarTesteModal(false);
-    setClienteParaPublicar(null);
-  };
 
   const handleSuccessEdit = () => {
     refetch();
@@ -753,11 +721,11 @@ export default function AdminClientesPage() {
 
     // Atualização otimista - atualizar UI imediatamente
     const faseAnterior = cliente.fase;
-    const novaFase = (columnId === 'teste' || columnId === 'producao') ? columnId as 'teste' | 'producao' : undefined;
+    // Usar columnId diretamente como fase (pode ser 'teste', 'producao' ou qualquer ID de coluna)
     setClientesComStatus(prev => 
       prev.map(c => 
         c.id === draggedCard 
-          ? { ...c, fase: novaFase }
+          ? { ...c, fase: columnId as any }
           : c
       )
     );
@@ -789,6 +757,7 @@ export default function AdminClientesPage() {
       }
 
       // Atualizar dados do servidor em background (sem bloquear UI)
+      // A atualização otimista já foi aplicada, então o cliente já está na coluna correta
       refetch();
     } catch (err: any) {
       // Reverter a mudança se a API falhar
@@ -896,6 +865,36 @@ export default function AdminClientesPage() {
       </Modal>
 
       <Modal
+        isOpen={showAtivarModal}
+        onClose={handleCancelDelete}
+        title="Ativar Cliente"
+        closeOnClickOutside={!activating}
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Tem certeza que deseja ativar o cliente <strong>{clienteParaExcluir?.nome || 'Cliente'}</strong>?
+          </p>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button
+              variant="secondary"
+              onClick={handleCancelDelete}
+              disabled={activating}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleAtivar}
+              disabled={activating}
+            >
+              {activating ? 'Ativando...' : 'Confirmar Ativação'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
         isOpen={showConfirmDeleteModal}
         onClose={handleCancelConfirmDelete}
         title="Confirmar Exclusão"
@@ -994,7 +993,7 @@ export default function AdminClientesPage() {
               <tr>
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50 rounded-tl-xl">Nome do Cliente</th>
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Telefone IA</th>
-                <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Status Conexão Evolution</th>
+                <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">WhatsApp</th>
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Tipo Marcação</th>
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Fase</th>
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Status</th>
@@ -1022,8 +1021,13 @@ export default function AdminClientesPage() {
                         >
                           {getInitials(cliente.nome)}
                         </div>
-                        <span>
+                        <span className="relative inline-flex items-center gap-2">
                           {cliente.nome || `Cliente ${cliente.id.substring(0, 8)}`}
+                          {tarefasPendentesPorCliente[cliente.id] > 0 && (
+                            <span className="min-w-[20px] h-5 bg-primary-600 text-white text-xs font-semibold rounded-full flex items-center justify-center px-1.5">
+                              {tarefasPendentesPorCliente[cliente.id] > 9 ? '9+' : tarefasPendentesPorCliente[cliente.id]}
+                            </span>
+                          )}
                         </span>
                       </div>
                     </td>
@@ -1069,7 +1073,7 @@ export default function AdminClientesPage() {
                         </button>
                         <ClienteActionsMenu
                           fase={cliente.fase}
-                          onPublicarAgente={() => handlePublicarAgente(cliente)}
+                          ativo={cliente.ativo}
                           onEditInstance={() => handleEditInstance(cliente)}
                           onEditCliente={() => handleEditCliente(cliente)}
                           onDesativar={() => handleDesativarCliente(cliente)}
@@ -1242,8 +1246,15 @@ export default function AdminClientesPage() {
                                 {getInitials(cliente.nome)}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <h4 className="text-xs font-semibold text-gray-900 truncate">
-                                  {cliente.nome || `Cliente ${cliente.id.substring(0, 8)}`}
+                                <h4 className="text-xs font-semibold text-gray-900 truncate flex items-center gap-1.5">
+                                  <span className="truncate">
+                                    {cliente.nome || `Cliente ${cliente.id.substring(0, 8)}`}
+                                  </span>
+                                  {tarefasPendentesPorCliente[cliente.id] > 0 && (
+                                    <span className="min-w-[16px] h-4 bg-primary-600 text-white text-[10px] font-semibold rounded-full flex items-center justify-center px-1 flex-shrink-0">
+                                      {tarefasPendentesPorCliente[cliente.id] > 9 ? '9+' : tarefasPendentesPorCliente[cliente.id]}
+                                    </span>
+                                  )}
                                 </h4>
                               </div>
                             </div>
@@ -1261,7 +1272,7 @@ export default function AdminClientesPage() {
                               </button>
                               <ClienteActionsMenu
                                 fase={cliente.fase}
-                                onPublicarAgente={() => handlePublicarAgente(cliente)}
+                                ativo={cliente.ativo}
                                 onEditInstance={() => handleEditInstance(cliente)}
                                 onEditCliente={() => handleEditCliente(cliente)}
                                 onDesativar={() => handleDesativarCliente(cliente)}
@@ -1392,65 +1403,6 @@ export default function AdminClientesPage() {
         onSuccess={handleSuccessEdit}
       />
 
-      <Modal
-        isOpen={showPublicarModal}
-        onClose={handleCancelPublicar}
-        title="Publicar Agente"
-        closeOnClickOutside={!updatingFase}
-        size="md"
-      >
-        <div className="space-y-4">
-          <p className="text-gray-700">
-            Tem certeza que deseja publicar este agente? O agente sairá do modo teste para produção, e a fase do cliente será alterada de <strong>Teste</strong> para <strong>Publicado</strong>.
-          </p>
-          <div className="flex justify-end gap-3 pt-4">
-            <Button
-              variant="secondary"
-              onClick={handleCancelPublicar}
-              disabled={updatingFase}
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleConfirmarPublicar}
-              disabled={updatingFase}
-            >
-              {updatingFase ? 'Publicando...' : 'Confirmar Publicação'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={showVoltarTesteModal}
-        onClose={handleCancelPublicar}
-        title="Voltar para Teste"
-        closeOnClickOutside={!updatingFase}
-        size="md"
-      >
-        <div className="space-y-4">
-          <p className="text-gray-700">
-            Tem certeza que deseja voltar este agente para a fase de teste? A fase do cliente será alterada de <strong>Publicado</strong> para <strong>Teste</strong>.
-          </p>
-          <div className="flex justify-end gap-3 pt-4">
-            <Button
-              variant="secondary"
-              onClick={handleCancelPublicar}
-              disabled={updatingFase}
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleConfirmarVoltarTeste}
-              disabled={updatingFase}
-            >
-              {updatingFase ? 'Voltando...' : 'Confirmar'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
 
       {showCredenciaisPopup && credenciaisData && (
         <CredenciaisPopup

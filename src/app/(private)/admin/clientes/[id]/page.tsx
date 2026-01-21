@@ -7,6 +7,7 @@ import { getWhatsAppInstances } from '@/lib/api/whatsapp';
 import { Usuario } from '@/lib/api/usuarios';
 import { WhatsAppInstance } from '@/types/domain';
 import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
 import { ArrowLeft, Trash2, Edit, Phone, Mail, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Play, Pause, Mic, File, Image as ImageIcon, Download, ZoomIn, ZoomOut, Link2, Send, Smile, Check, CheckSquare, Square, UserPlus } from 'lucide-react';
 import { ROUTES } from '@/lib/constants';
 import { ClienteActionsMenu } from '@/components/admin/ClienteActionsMenu';
@@ -19,6 +20,10 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { filterWhatsAppUrl } from '@/lib/utils/images';
 import { MensagemConversa } from '@/lib/api/mensagens';
+import { useTarefas } from '@/hooks/useTarefas';
+import { Tarefa } from '@/lib/api/tarefas';
+import { SelecionarResponsavelPopover } from '@/components/tarefas/SelecionarResponsavelPopover';
+import { SelecionarDataPopover } from '@/components/tarefas/SelecionarDataPopover';
 
 interface ClienteComStatus extends Usuario {
   statusEvolution?: 'conectado' | 'desconectado' | 'conectando' | 'erro';
@@ -333,211 +338,757 @@ function DocumentoMessage({
   );
 }
 
+// Componente auxiliar para botão de responsável da tarefa
+function TarefaResponsavelButton({
+  tarefa,
+  tarefaEmEdicao,
+  showPopover,
+  onOpen,
+  onClose,
+  onSelect,
+}: {
+  tarefa: Tarefa;
+  tarefaEmEdicao: Tarefa | null;
+  showPopover: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onSelect: (admin: Usuario) => void;
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpen();
+        }}
+        className="text-gray-400 hover:text-primary-600 transition-colors"
+        title="Atribuir responsável"
+      >
+        <UserPlus className="w-4 h-4" />
+      </button>
+      <SelecionarResponsavelPopover
+        isOpen={showPopover && tarefaEmEdicao?.id === tarefa.id}
+        onClose={onClose}
+        onSelect={onSelect}
+        responsavelAtual={tarefa.responsavel}
+        buttonRef={buttonRef}
+      />
+    </div>
+  );
+}
+
+// Componente auxiliar para botão de data da tarefa
+function TarefaDataButton({
+  tarefa,
+  tarefaEmEdicao,
+  showPopover,
+  onOpen,
+  onClose,
+  onSelect,
+}: {
+  tarefa: Tarefa;
+  tarefaEmEdicao: Tarefa | null;
+  showPopover: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onSelect: (date: Date | null) => void;
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpen();
+        }}
+        className="text-gray-400 hover:text-primary-600 transition-colors"
+        title="Definir data de vencimento"
+      >
+        <Clock className="w-4 h-4" />
+      </button>
+      <SelecionarDataPopover
+        isOpen={showPopover && tarefaEmEdicao?.id === tarefa.id}
+        onClose={onClose}
+        onSelect={onSelect}
+        dataAtual={tarefa.data_vencimento ? new Date(tarefa.data_vencimento) : null}
+        buttonRef={buttonRef}
+      />
+    </div>
+  );
+}
+
+// Componente para data clicável com popover
+function TarefaDataClicavel({
+  tarefa,
+  dataVencimento,
+  isVencida,
+  tarefaEmEdicao,
+  showPopover,
+  onOpen,
+  onClose,
+  onSelect,
+}: {
+  tarefa: Tarefa;
+  dataVencimento: string;
+  isVencida: boolean;
+  tarefaEmEdicao: Tarefa | null;
+  showPopover: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onSelect: (date: Date | null) => void;
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpen();
+        }}
+        className={`text-xs cursor-pointer hover:text-primary-600 transition-colors flex items-center gap-1 ${
+          isVencida ? 'text-red-600 font-semibold hover:text-red-700' : 'text-gray-500'
+        }`}
+        title="Clique para alterar a data"
+      >
+        <Calendar className="w-3 h-3" />
+        {dataVencimento}
+      </button>
+      <SelecionarDataPopover
+        isOpen={showPopover && tarefaEmEdicao?.id === tarefa.id}
+        onClose={onClose}
+        onSelect={onSelect}
+        dataAtual={tarefa.data_vencimento ? new Date(tarefa.data_vencimento) : null}
+        buttonRef={buttonRef}
+      />
+    </div>
+  );
+}
+
+// Componente para responsável clicável com popover
+function TarefaResponsavelClicavel({
+  tarefa,
+  tarefaEmEdicao,
+  showPopover,
+  onOpen,
+  onClose,
+  onSelect,
+  getInitials,
+  getAvatarColor,
+}: {
+  tarefa: Tarefa;
+  tarefaEmEdicao: Tarefa | null;
+  showPopover: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onSelect: (admin: Usuario | null) => void;
+  getInitials: (name: string | null) => string;
+  getAvatarColor: (name: string | null) => string;
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpen();
+        }}
+        className="flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity"
+        title="Clique para alterar o responsável"
+      >
+        <div
+          className={`w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-semibold ${getAvatarColor(
+            tarefa.responsavel?.nome || null
+          )}`}
+        >
+          {getInitials(tarefa.responsavel?.nome || null)}
+        </div>
+        <span className="text-xs text-gray-500 hover:text-primary-600 transition-colors">
+          {tarefa.responsavel?.nome}
+        </span>
+      </button>
+      <SelecionarResponsavelPopover
+        isOpen={showPopover && tarefaEmEdicao?.id === tarefa.id}
+        onClose={onClose}
+        onSelect={onSelect}
+        responsavelAtual={tarefa.responsavel}
+        buttonRef={buttonRef}
+      />
+    </div>
+  );
+}
+
 // Componente de Tarefas
 function TarefasComponent({ 
-  tarefas, 
-  onTarefasChange,
   clienteId 
 }: { 
-  tarefas: Array<{ id: string; descricao: string; concluida: boolean }>;
-  onTarefasChange: (tarefas: Array<{ id: string; descricao: string; concluida: boolean }>) => void;
   clienteId: string;
 }) {
+  const { tarefas, loading, adicionarTarefa, atualizarTarefa, excluirTarefa, excluirTodas } = useTarefas(clienteId);
   const [novaTarefa, setNovaTarefa] = useState('');
   const [mostrarOcultas, setMostrarOcultas] = useState(true);
   const [adicionandoTarefa, setAdicionandoTarefa] = useState(false);
+  const [tarefaEmEdicao, setTarefaEmEdicao] = useState<Tarefa | null>(null);
+  const [showResponsavelPopover, setShowResponsavelPopover] = useState(false);
+  const [showDataPopover, setShowDataPopover] = useState(false);
+  const [dataVencimentoTemp, setDataVencimentoTemp] = useState<Date | null>(null);
+  const [responsavelTemp, setResponsavelTemp] = useState<Usuario | null>(null);
+  const [tarefaEditandoNome, setTarefaEditandoNome] = useState<string | null>(null);
+  const [nomeTarefaEditando, setNomeTarefaEditando] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [tarefaParaExcluir, setTarefaParaExcluir] = useState<Tarefa | null>(null);
+  const [excluindoTarefa, setExcluindoTarefa] = useState(false);
+  const nomeTarefaInputRef = useRef<HTMLInputElement>(null);
+  const responsavelButtonRef = useRef<HTMLButtonElement>(null);
+  const dataButtonRef = useRef<HTMLButtonElement>(null);
 
   const tarefasVisiveis = mostrarOcultas 
     ? tarefas 
-    : tarefas.filter(t => !t.concluida);
+    : tarefas.filter(t => t.status !== 'concluida');
 
   const totalTarefas = tarefas.length;
-  const tarefasConcluidas = tarefas.filter(t => t.concluida).length;
+  const tarefasConcluidas = tarefas.filter(t => t.status === 'concluida').length;
   const porcentagem = totalTarefas > 0 ? Math.round((tarefasConcluidas / totalTarefas) * 100) : 0;
-  const todasMarcadas = totalTarefas > 0 && tarefas.every(t => t.concluida);
+  const todasMarcadas = totalTarefas > 0 && tarefas.every(t => t.status === 'concluida');
 
-  const toggleTodasTarefas = () => {
-    const novasTarefas = tarefas.map(t => ({
-      ...t,
-      concluida: !todasMarcadas
-    }));
-    onTarefasChange(novasTarefas);
-  };
-
-  const toggleTarefa = (id: string) => {
-    const novasTarefas = tarefas.map(t => 
-      t.id === id ? { ...t, concluida: !t.concluida } : t
-    );
-    onTarefasChange(novasTarefas);
-  };
-
-  const adicionarTarefa = () => {
-    if (novaTarefa.trim()) {
-      const nova = {
-        id: `${Date.now()}-${Math.random()}`,
-        descricao: novaTarefa.trim(),
-        concluida: false
-      };
-      onTarefasChange([...tarefas, nova]);
-      setNovaTarefa('');
-      setAdicionandoTarefa(false);
+  const toggleTodasTarefas = async () => {
+    const novoStatus = todasMarcadas ? 'pendente' : 'concluida';
+    try {
+      await Promise.all(
+        tarefas.map((t) => atualizarTarefa(t.id, { status: novoStatus as any }))
+      );
+    } catch (error) {
+      console.error('Erro ao atualizar tarefas:', error);
+      alert('Erro ao atualizar tarefas. Tente novamente.');
     }
   };
 
-  const excluirTarefa = (id: string) => {
-    onTarefasChange(tarefas.filter(t => t.id !== id));
+  const toggleTarefa = async (tarefa: Tarefa) => {
+    const novoStatus = tarefa.status === 'concluida' ? 'pendente' : 'concluida';
+    try {
+      await atualizarTarefa(tarefa.id, { status: novoStatus as any });
+    } catch (error) {
+      console.error('Erro ao atualizar tarefa:', error);
+      alert('Erro ao atualizar tarefa. Tente novamente.');
+    }
+  };
+
+  const handleAdicionarTarefa = async () => {
+    if (novaTarefa.trim()) {
+      try {
+        await adicionarTarefa(
+          novaTarefa.trim(),
+          dataVencimentoTemp,
+          responsavelTemp?.id || null
+        );
+        setNovaTarefa('');
+        setDataVencimentoTemp(null);
+        setResponsavelTemp(null);
+        setAdicionandoTarefa(false);
+      } catch (error) {
+        console.error('Erro ao adicionar tarefa:', error);
+        alert('Erro ao adicionar tarefa. Tente novamente.');
+      }
+    }
+  };
+
+  const handleExcluirTarefa = (tarefa: Tarefa) => {
+    setTarefaParaExcluir(tarefa);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmarExclusao = async () => {
+    if (!tarefaParaExcluir) return;
+
+    try {
+      setExcluindoTarefa(true);
+      await excluirTarefa(tarefaParaExcluir.id);
+      setShowDeleteModal(false);
+      setTarefaParaExcluir(null);
+    } catch (error) {
+      console.error('Erro ao excluir tarefa:', error);
+      // Pode adicionar uma notificação de erro aqui se necessário
+    } finally {
+      setExcluindoTarefa(false);
+    }
+  };
+
+  const handleCancelarExclusao = () => {
+    setShowDeleteModal(false);
+    setTarefaParaExcluir(null);
+  };
+
+  const handleExcluirTodas = async () => {
+    if (confirm('Tem certeza que deseja excluir todas as tarefas?')) {
+      try {
+        await excluirTodas();
+      } catch (error) {
+        console.error('Erro ao excluir tarefas:', error);
+        alert('Erro ao excluir tarefas. Tente novamente.');
+      }
+    }
   };
 
   const cancelarAdicao = () => {
     setNovaTarefa('');
+    setDataVencimentoTemp(null);
+    setResponsavelTemp(null);
     setAdicionandoTarefa(false);
   };
 
-  return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-      {/* Cabeçalho */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={toggleTodasTarefas}
-            className="flex items-center justify-center w-5 h-5 rounded border-2 border-gray-300 hover:border-gray-400 transition-colors"
-          >
-            {todasMarcadas ? (
-              <CheckSquare className="w-5 h-5 text-white fill-green-500 stroke-white" strokeWidth={2} />
-            ) : (
-              <Square className="w-5 h-5 text-gray-400" />
-            )}
-          </button>
-          <h2 className="text-lg font-semibold text-gray-900">Tarefas</h2>
+  const handleSelecionarResponsavel = (admin: Usuario | null) => {
+    if (tarefaEmEdicao) {
+      atualizarTarefa(tarefaEmEdicao.id, { responsavel_id: admin?.id || null });
+      setTarefaEmEdicao(null);
+    } else {
+      setResponsavelTemp(admin);
+    }
+  };
+
+  const handleSelecionarData = (date: Date | null) => {
+    setDataVencimentoTemp(date);
+    if (tarefaEmEdicao) {
+      atualizarTarefa(tarefaEmEdicao.id, { data_vencimento: date });
+      setTarefaEmEdicao(null);
+    }
+  };
+
+  const iniciarEdicaoNome = (tarefa: Tarefa) => {
+    setTarefaEditandoNome(tarefa.id);
+    setNomeTarefaEditando(tarefa.nome);
+    // Focar no input após o próximo render
+    setTimeout(() => {
+      nomeTarefaInputRef.current?.focus();
+      nomeTarefaInputRef.current?.select();
+    }, 0);
+  };
+
+  const salvarNomeTarefa = async (tarefaId: string) => {
+    const nomeLimpo = nomeTarefaEditando.trim();
+    if (nomeLimpo && nomeLimpo !== tarefas.find(t => t.id === tarefaId)?.nome) {
+      try {
+        await atualizarTarefa(tarefaId, { nome: nomeLimpo });
+      } catch (error) {
+        console.error('Erro ao atualizar nome da tarefa:', error);
+        alert('Erro ao atualizar nome da tarefa. Tente novamente.');
+      }
+    }
+    setTarefaEditandoNome(null);
+    setNomeTarefaEditando('');
+  };
+
+  const cancelarEdicaoNome = () => {
+    setTarefaEditandoNome(null);
+    setNomeTarefaEditando('');
+  };
+
+  const formatarDataVencimento = (data: string | null) => {
+    if (!data) return null;
+    try {
+      return format(new Date(data), "dd/MM/yyyy", { locale: ptBR });
+    } catch {
+      return null;
+    }
+  };
+
+  const getInitials = (name: string | null) => {
+    if (!name) return '?';
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2);
+  };
+
+  const getAvatarColor = (name: string | null) => {
+    if (!name) return 'bg-gray-400';
+    const colors = [
+      'bg-red-400',
+      'bg-blue-400',
+      'bg-green-400',
+      'bg-yellow-400',
+      'bg-purple-400',
+      'bg-pink-400',
+      'bg-indigo-400',
+      'bg-orange-400',
+    ];
+    const index = name.charCodeAt(0) % colors.length;
+    return colors[index];
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'concluida':
+        return 'text-green-600 bg-green-50';
+      case 'em_andamento':
+        return 'text-blue-600 bg-blue-50';
+      case 'cancelada':
+        return 'text-red-600 bg-red-50';
+      default:
+        return 'text-gray-600 bg-gray-50';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'concluida':
+        return 'Concluída';
+      case 'em_andamento':
+        return 'Em Andamento';
+      case 'cancelada':
+        return 'Cancelada';
+      default:
+        return 'Pendente';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
         </div>
-        <div className="flex items-center gap-2">
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        {/* Cabeçalho */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Tarefas</h2>
           <button
             onClick={() => setMostrarOcultas(!mostrarOcultas)}
             className="px-3 py-1.5 bg-gray-50 text-gray-700 text-sm rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
           >
-            {mostrarOcultas ? 'Ocultar itens marcados' : 'Mostrar itens marcados'}
-          </button>
-          <button
-            onClick={() => {
-              if (confirm('Tem certeza que deseja excluir todas as tarefas?')) {
-                onTarefasChange([]);
-              }
-            }}
-            className="px-3 py-1.5 bg-gray-50 text-gray-700 text-sm rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
-          >
-            Excluir
+            {mostrarOcultas ? 'Ocultar concluídas' : 'Mostrar concluídas'}
           </button>
         </div>
-      </div>
 
-      {/* Barra de Progresso */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-gray-900 text-sm font-medium">{porcentagem}%</span>
+        {/* Barra de Progresso */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-gray-900 text-sm font-medium">{porcentagem}%</span>
+          </div>
+          <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary-600 transition-all duration-300"
+              style={{ width: `${porcentagem}%` }}
+            />
+          </div>
         </div>
-        <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-primary-600 transition-all duration-300"
-            style={{ width: `${porcentagem}%` }}
-          />
-        </div>
-      </div>
 
-      {/* Lista de Tarefas */}
-      <div className="space-y-2 mb-4">
-        {tarefasVisiveis.length === 0 ? (
-          <p className="text-gray-500 text-sm text-center py-4">Nenhuma tarefa ainda</p>
-        ) : (
-          tarefasVisiveis.map((tarefa) => (
-            <div key={tarefa.id} className="flex items-center gap-3 group">
+        {/* Lista de Tarefas */}
+        <div className="space-y-2 mb-4">
+          {tarefasVisiveis.length > 0 && tarefasVisiveis.map((tarefa) => {
+              const dataVencimento = formatarDataVencimento(tarefa.data_vencimento);
+              const isVencida = tarefa.data_vencimento && new Date(tarefa.data_vencimento) < new Date() && tarefa.status !== 'concluida';
+              
+              return (
+                <div key={tarefa.id} className="flex items-start gap-3 group p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                  <button
+                    onClick={() => toggleTarefa(tarefa)}
+                    className="flex items-center justify-center w-5 h-5 rounded border-2 border-gray-300 hover:border-gray-400 transition-colors flex-shrink-0 mt-0.5"
+                  >
+                    {tarefa.status === 'concluida' ? (
+                      <CheckSquare className="w-5 h-5 text-white fill-green-500 stroke-white" strokeWidth={2} />
+                    ) : (
+                      <Square className="w-5 h-5 text-gray-400" />
+                    )}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        {tarefaEditandoNome === tarefa.id ? (
+                          <input
+                            ref={nomeTarefaInputRef}
+                            type="text"
+                            value={nomeTarefaEditando}
+                            onChange={(e) => setNomeTarefaEditando(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                salvarNomeTarefa(tarefa.id);
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                cancelarEdicaoNome();
+                              }
+                            }}
+                            onBlur={() => salvarNomeTarefa(tarefa.id)}
+                            className={`w-full px-2 py-1 text-sm border border-primary-500 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                              tarefa.status === 'concluida' ? 'line-through text-gray-500' : 'text-gray-900'
+                            }`}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              iniciarEdicaoNome(tarefa);
+                            }}
+                            className={`text-gray-900 text-sm block cursor-pointer hover:text-primary-600 transition-colors ${
+                              tarefa.status === 'concluida' ? 'line-through text-gray-500' : ''
+                            }`}
+                          >
+                            {tarefa.nome}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        {dataVencimento ? (
+                          <TarefaDataClicavel
+                            tarefa={tarefa}
+                            dataVencimento={dataVencimento}
+                            isVencida={isVencida}
+                            tarefaEmEdicao={tarefaEmEdicao}
+                            showPopover={showDataPopover}
+                            onOpen={() => {
+                              setTarefaEmEdicao(tarefa);
+                              setShowDataPopover(true);
+                            }}
+                            onClose={() => {
+                              setShowDataPopover(false);
+                              setTarefaEmEdicao(null);
+                            }}
+                            onSelect={(date) => {
+                              handleSelecionarData(date);
+                              setShowDataPopover(false);
+                            }}
+                          />
+                        ) : (
+                          <TarefaDataButton
+                            tarefa={tarefa}
+                            tarefaEmEdicao={tarefaEmEdicao}
+                            showPopover={showDataPopover}
+                            onOpen={() => {
+                              setTarefaEmEdicao(tarefa);
+                              setShowDataPopover(true);
+                            }}
+                            onClose={() => {
+                              setShowDataPopover(false);
+                              setTarefaEmEdicao(null);
+                            }}
+                            onSelect={(date) => {
+                              handleSelecionarData(date);
+                              setShowDataPopover(false);
+                            }}
+                          />
+                        )}
+                        {tarefa.responsavel ? (
+                          <TarefaResponsavelClicavel
+                            tarefa={tarefa}
+                            tarefaEmEdicao={tarefaEmEdicao}
+                            showPopover={showResponsavelPopover}
+                            onOpen={() => {
+                              setTarefaEmEdicao(tarefa);
+                              setShowResponsavelPopover(true);
+                            }}
+                            onClose={() => {
+                              setShowResponsavelPopover(false);
+                              setTarefaEmEdicao(null);
+                            }}
+                            onSelect={(admin) => {
+                              handleSelecionarResponsavel(admin);
+                              setShowResponsavelPopover(false);
+                            }}
+                            getInitials={getInitials}
+                            getAvatarColor={getAvatarColor}
+                          />
+                        ) : (
+                          <TarefaResponsavelButton
+                            tarefa={tarefa}
+                            tarefaEmEdicao={tarefaEmEdicao}
+                            showPopover={showResponsavelPopover}
+                            onOpen={() => {
+                              setTarefaEmEdicao(tarefa);
+                              setShowResponsavelPopover(true);
+                            }}
+                            onClose={() => {
+                              setShowResponsavelPopover(false);
+                              setTarefaEmEdicao(null);
+                            }}
+                            onSelect={(admin) => {
+                              handleSelecionarResponsavel(admin);
+                              setShowResponsavelPopover(false);
+                            }}
+                          />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExcluirTarefa(tarefa);
+                          }}
+                          className="text-gray-400 hover:text-red-600 transition-colors"
+                          title="Excluir tarefa"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+
+        {/* Campo para Adicionar Nova Tarefa */}
+        {adicionandoTarefa ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={novaTarefa}
+                onChange={(e) => setNovaTarefa(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    handleAdicionarTarefa();
+                  } else if (e.key === 'Escape') {
+                    cancelarAdicao();
+                  }
+                }}
+                placeholder="Adicionar um item"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                autoFocus
+              />
               <button
-                onClick={() => toggleTarefa(tarefa.id)}
-                className="flex items-center justify-center w-5 h-5 rounded border-2 border-gray-300 hover:border-gray-400 transition-colors flex-shrink-0"
+                onClick={handleAdicionarTarefa}
+                className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center text-white hover:bg-primary-700 transition-colors"
+                title="Adicionar tarefa"
               >
-                {tarefa.concluida ? (
-                  <CheckSquare className="w-5 h-5 text-white fill-green-500 stroke-white" strokeWidth={2} />
-                ) : (
-                  <Square className="w-5 h-5 text-gray-400" />
-                )}
-              </button>
-              <span className={`text-gray-900 text-sm flex-1 ${tarefa.concluida ? 'line-through text-gray-500' : ''}`}>
-                {tarefa.descricao}
-              </span>
-              <button
-                onClick={() => excluirTarefa(tarefa.id)}
-                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 transition-opacity"
-                title="Excluir tarefa"
-              >
-                <Trash2 className="w-4 h-4" />
+                <Check className="w-4 h-4" />
               </button>
             </div>
-          ))
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleAdicionarTarefa}
+                  className="px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition-colors"
+                >
+                  Adicionar
+                </button>
+                <button
+                  onClick={cancelarAdicao}
+                  className="px-4 py-2 bg-gray-50 text-gray-700 text-sm rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
+                >
+                  Cancelar
+                </button>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <button
+                    ref={responsavelButtonRef}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowResponsavelPopover(true);
+                    }}
+                    className={`flex items-center gap-2 text-sm transition-colors ${
+                      responsavelTemp
+                        ? 'text-primary-600 font-medium'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    {responsavelTemp ? responsavelTemp.nome : 'Atribuir'}
+                  </button>
+                  <SelecionarResponsavelPopover
+                    isOpen={showResponsavelPopover && !tarefaEmEdicao}
+                    onClose={() => setShowResponsavelPopover(false)}
+                    onSelect={(admin) => {
+                      setResponsavelTemp(admin);
+                      setShowResponsavelPopover(false);
+                    }}
+                    responsavelAtual={responsavelTemp}
+                    buttonRef={responsavelButtonRef}
+                  />
+                </div>
+                <div className="relative">
+                  <button
+                    ref={dataButtonRef}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDataPopover(true);
+                    }}
+                    className={`flex items-center gap-2 text-sm transition-colors ${
+                      dataVencimentoTemp
+                        ? 'text-primary-600 font-medium'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Clock className="w-4 h-4" />
+                    {dataVencimentoTemp
+                      ? format(dataVencimentoTemp, 'dd/MM/yyyy', { locale: ptBR })
+                      : 'Data de Entrega'}
+                  </button>
+                  <SelecionarDataPopover
+                    isOpen={showDataPopover && !tarefaEmEdicao}
+                    onClose={() => setShowDataPopover(false)}
+                    onSelect={(date) => {
+                      setDataVencimentoTemp(date);
+                      setShowDataPopover(false);
+                    }}
+                    dataAtual={dataVencimentoTemp}
+                    buttonRef={dataButtonRef}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setAdicionandoTarefa(true)}
+            className="w-full px-4 py-2 bg-gray-50 text-gray-700 text-sm rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
+          >
+            Adicionar um item
+          </button>
         )}
       </div>
 
-      {/* Campo para Adicionar Nova Tarefa */}
-      {adicionandoTarefa ? (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={novaTarefa}
-              onChange={(e) => setNovaTarefa(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === 'Enter') {
-                  adicionarTarefa();
-                } else if (e.key === 'Escape') {
-                  cancelarAdicao();
-                }
-              }}
-              placeholder="Adicionar um item"
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              autoFocus
-            />
-            <button
-              onClick={adicionarTarefa}
-              className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center text-white hover:bg-primary-700 transition-colors"
-              title="Adicionar tarefa"
+      {/* Modal de Confirmação de Exclusão */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={handleCancelarExclusao}
+        title="Confirmar Exclusão"
+        closeOnClickOutside={false}
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Deseja realmente excluir a tarefa <strong>"{tarefaParaExcluir?.nome}"</strong>?
+          </p>
+          <p className="text-sm text-gray-500">
+            Esta ação não pode ser desfeita.
+          </p>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button
+              variant="secondary"
+              onClick={handleCancelarExclusao}
+              disabled={excluindoTarefa}
             >
-              <Check className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={adicionarTarefa}
-                className="px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition-colors"
-              >
-                Adicionar
-              </button>
-              <button
-                onClick={cancelarAdicao}
-                className="px-4 py-2 bg-gray-50 text-gray-700 text-sm rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
-              >
-                Cancelar
-              </button>
-            </div>
-            <div className="flex items-center gap-4">
-              <button className="flex items-center gap-2 text-gray-500 hover:text-gray-700 text-sm transition-colors">
-                <UserPlus className="w-4 h-4" />
-                Atribuir
-              </button>
-              <button className="flex items-center gap-2 text-gray-500 hover:text-gray-700 text-sm transition-colors">
-                <Clock className="w-4 h-4" />
-                Data de Entrega
-              </button>
-            </div>
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleConfirmarExclusao}
+              disabled={excluindoTarefa}
+            >
+              {excluindoTarefa ? 'Excluindo...' : 'Confirmar Exclusão'}
+            </Button>
           </div>
         </div>
-      ) : (
-        <button
-          onClick={() => setAdicionandoTarefa(true)}
-          className="w-full px-4 py-2 bg-gray-50 text-gray-700 text-sm rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
-        >
-          Adicionar um item
-        </button>
-      )}
-    </div>
+      </Modal>
+    </>
   );
 }
 
@@ -550,6 +1101,9 @@ export default function ClienteDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showEditClienteModal, setShowEditClienteModal] = useState(false);
   const [showEditInstanceModal, setShowEditInstanceModal] = useState(false);
+  const [showAtivarDesativarModal, setShowAtivarDesativarModal] = useState(false);
+  const [activating, setActivating] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
   const [instanciaSelecionada, setInstanciaSelecionada] = useState<WhatsAppInstance | null>(null);
   const [kanbanColumns, setKanbanColumns] = useState<Array<{ id: string; name: string; color?: string }>>([]);
   const { mensagens, loading: loadingMensagens } = useMensagensPorCliente(clienteId);
@@ -564,7 +1118,6 @@ export default function ClienteDetailPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [comentario, setComentario] = useState('');
-  const [tarefas, setTarefas] = useState<Array<{ id: string; descricao: string; concluida: boolean }>>([]);
 
   useEffect(() => {
     async function loadCliente() {
@@ -796,53 +1349,22 @@ export default function ClienteDetailPage() {
     }
   };
 
-  const handlePublicarAgente = async () => {
+
+  const handleDesativarCliente = () => {
     if (!cliente) return;
-
-    const confirmar = confirm(
-      cliente.fase === 'producao'
-        ? 'Tem certeza que deseja voltar este agente para a fase de teste?'
-        : 'Tem certeza que deseja publicar este agente? O agente sairá do modo teste para produção.'
-    );
-
-    if (!confirmar) return;
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('Não autenticado');
-      }
-
-      const response = await fetch('/api/admin/atualizar-fase-cliente', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          clienteId: cliente.id,
-          fase: cliente.fase === 'producao' ? 'teste' : 'producao',
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao atualizar fase');
-      }
-
-      await handleSuccessEdit();
-    } catch (err: any) {
-      alert(err.message || 'Erro ao atualizar fase. Tente novamente.');
-    }
+    setShowAtivarDesativarModal(true);
   };
 
-  const handleDesativarCliente = async () => {
+  const handleConfirmarAtivarDesativar = async () => {
     if (!cliente) return;
 
-    const confirmar = confirm('Tem certeza que deseja desativar este cliente?');
-
-    if (!confirmar) return;
+    const novoStatus = cliente.ativo === false;
+    
+    if (novoStatus) {
+      setActivating(true);
+    } else {
+      setDeactivating(true);
+    }
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -858,19 +1380,31 @@ export default function ClienteDetailPage() {
         },
         body: JSON.stringify({
           clienteId: cliente.id,
+          ativo: novoStatus,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Erro ao desativar cliente');
+        throw new Error(data.error || `Erro ao ${novoStatus ? 'ativar' : 'desativar'} cliente`);
       }
 
+      setShowAtivarDesativarModal(false);
       await handleSuccessEdit();
     } catch (err: any) {
-      alert(err.message || 'Erro ao desativar cliente. Tente novamente.');
+      alert(err.message || `Erro ao ${novoStatus ? 'ativar' : 'desativar'} cliente. Tente novamente.`);
+    } finally {
+      if (novoStatus) {
+        setActivating(false);
+      } else {
+        setDeactivating(false);
+      }
     }
+  };
+
+  const handleCancelarAtivarDesativar = () => {
+    setShowAtivarDesativarModal(false);
   };
 
   if (loading) {
@@ -952,7 +1486,7 @@ export default function ClienteDetailPage() {
             <div className="flex items-center gap-2">
               <ClienteActionsMenu
                 fase={cliente.fase}
-                onPublicarAgente={handlePublicarAgente}
+                ativo={cliente.ativo}
                 onEditInstance={handleEditInstance}
                 onEditCliente={handleEditCliente}
                 onDesativar={handleDesativarCliente}
@@ -1070,11 +1604,7 @@ export default function ClienteDetailPage() {
 
             {/* Tarefas */}
             <div className="mb-8">
-              <TarefasComponent
-                tarefas={tarefas}
-                onTarefasChange={setTarefas}
-                clienteId={clienteId}
-              />
+              <TarefasComponent clienteId={clienteId} />
             </div>
           </div>
         </div>
@@ -1374,6 +1904,69 @@ export default function ClienteDetailPage() {
         cliente={cliente}
         onSuccess={handleSuccessEdit}
       />
+
+      <Modal
+        isOpen={showAtivarDesativarModal}
+        onClose={handleCancelarAtivarDesativar}
+        title={cliente?.ativo === false ? 'Ativar Cliente' : 'Desativar ou Excluir Cliente'}
+        closeOnClickOutside={!activating && !deactivating}
+        size="md"
+      >
+        <div className="space-y-4">
+          {cliente?.ativo === false ? (
+            <>
+              <p className="text-gray-700">
+                Tem certeza que deseja ativar o cliente <strong>{cliente?.nome || 'Cliente'}</strong>?
+              </p>
+              <div className="flex justify-end gap-3 pt-4">
+                <Button
+                  variant="secondary"
+                  onClick={handleCancelarAtivarDesativar}
+                  disabled={activating}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleConfirmarAtivarDesativar}
+                  disabled={activating}
+                >
+                  {activating ? 'Ativando...' : 'Confirmar Ativação'}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-gray-700">
+                Você não acha melhor desativar? Se excluir, todos os dados desse cliente serão excluídos permanentemente.
+              </p>
+              <div className="flex justify-end gap-3 pt-4">
+                <Button
+                  variant="danger"
+                  onClick={async () => {
+                    if (!cliente) return;
+                    const confirmar = confirm(`Tem certeza que deseja excluir permanentemente o cliente "${cliente.nome}"? Esta ação não pode ser desfeita.`);
+                    if (confirmar) {
+                      // Aqui você pode adicionar a lógica de exclusão se necessário
+                      alert('Funcionalidade de exclusão ainda não implementada nesta página.');
+                    }
+                  }}
+                  disabled={deactivating}
+                >
+                  Excluir
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleConfirmarAtivarDesativar}
+                  disabled={deactivating}
+                >
+                  {deactivating ? 'Desativando...' : 'Desativar'}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
     </>
   );
 }

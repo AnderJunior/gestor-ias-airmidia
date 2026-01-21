@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { triggerWebhookDesativarCliente, triggerWebhookAtivarDesativarCliente } from '@/lib/api/webhookTrigger';
 
 // Função para obter cliente Supabase com anon key
 function getSupabaseClient() {
@@ -65,13 +66,13 @@ export async function POST(request: NextRequest) {
 
     if (usuarioError || !usuario || usuario.tipo !== 'administracao') {
       return NextResponse.json(
-        { error: 'Acesso negado. Apenas administradores podem desativar clientes.' },
+        { error: 'Acesso negado. Apenas administradores podem ativar/desativar clientes.' },
         { status: 403 }
       );
     }
 
     const body = await request.json();
-    const { clienteId } = body;
+    const { clienteId, ativo } = body;
 
     if (!clienteId) {
       return NextResponse.json(
@@ -80,10 +81,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Se ativo não foi fornecido, assumir desativar (false) para manter compatibilidade
+    const novoStatusAtivo = ativo !== undefined ? ativo : false;
+
     // Verificar se o cliente existe e não é administrador
     const { data: cliente, error: clienteError } = await supabaseAdmin
       .from('usuarios')
-      .select('id, tipo')
+      .select('id, tipo, nome, telefone_ia, fase')
       .eq('id', clienteId)
       .single();
 
@@ -96,32 +100,79 @@ export async function POST(request: NextRequest) {
 
     if (cliente.tipo === 'administracao') {
       return NextResponse.json(
-        { error: 'Não é possível desativar um administrador' },
+        { error: 'Não é possível ativar/desativar um administrador' },
         { status: 403 }
       );
     }
 
-    // Desativar cliente (alterar campo ativo para false)
+    // Buscar etapa atual do kanban se existir
+    // A fase do cliente é o ID da coluna do kanban (a coluna é 'name', não 'nome')
+    let etapaAtual = null;
+    let etapaAtualId = null;
+    if (cliente.fase) {
+      const { data: kanbanColuna } = await supabaseAdmin
+        .from('kanban_colunas')
+        .select('id, name')
+        .eq('id', cliente.fase)
+        .maybeSingle();
+      
+      if (kanbanColuna) {
+        etapaAtual = kanbanColuna.name;
+        etapaAtualId = kanbanColuna.id;
+      } else if (cliente.fase === 'teste' || cliente.fase === 'producao') {
+        // Se for uma fase padrão, usar o nome da fase
+        etapaAtual = cliente.fase === 'teste' ? 'Teste' : 'Produção';
+        etapaAtualId = cliente.fase;
+      } else {
+        // Se não encontrou e não é fase padrão, usar o valor da fase como fallback
+        etapaAtual = cliente.fase;
+        etapaAtualId = cliente.fase;
+      }
+    }
+
+    // Ativar ou desativar cliente (alterar campo ativo)
     const { data: updatedCliente, error: updateError } = await supabaseAdmin
       .from('usuarios')
-      .update({ ativo: false })
+      .update({ ativo: novoStatusAtivo })
       .eq('id', clienteId)
       .select()
       .single();
 
     if (updateError) {
-      console.error('Erro ao desativar cliente:', updateError);
+      console.error('Erro ao atualizar status do cliente:', updateError);
       return NextResponse.json(
-        { error: updateError.message || 'Erro ao desativar cliente' },
+        { error: updateError.message || 'Erro ao atualizar status do cliente' },
         { status: 500 }
       );
+    }
+
+    // Acionar webhook - passar o usuario_id do admin que está ativando/desativando
+    try {
+      await triggerWebhookAtivarDesativarCliente({
+        id: updatedCliente.id,
+        nome: updatedCliente.nome || '',
+        telefone: updatedCliente.telefone_ia || '',
+        foto_perfil: undefined,
+        usuario_id: updatedCliente.id,
+        etapa_atual: etapaAtual,
+        etapa_atual_id: etapaAtualId,
+        ativo: novoStatusAtivo,
+        updated_at: updatedCliente.updated_at,
+        usuario: {
+          id: user.id,
+          nome: null,
+          telefone_ia: null,
+        },
+      }, user.id); // Passar o usuario_id do admin
+    } catch (err) {
+      console.error('Erro ao acionar webhook ativar_desativar_cliente:', err);
     }
 
     return NextResponse.json(
       { 
         success: true,
         cliente: updatedCliente,
-        message: 'Cliente desativado com sucesso'
+        message: novoStatusAtivo ? 'Cliente ativado com sucesso' : 'Cliente desativado com sucesso'
       },
       { status: 200 }
     );

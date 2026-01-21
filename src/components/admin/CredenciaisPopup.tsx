@@ -7,7 +7,7 @@ import { Eye, EyeOff, Copy, Check } from 'lucide-react';
 interface CredenciaisPopupProps {
   email: string;
   senha: string;
-  tipoCliente: 'atendimento' | 'agendamento';
+  tipoCliente: 'atendimento' | 'agendamento' | 'administracao';
   onClose: () => void;
 }
 
@@ -25,7 +25,10 @@ export function CredenciaisPopup({ email, senha, tipoCliente, onClose }: Credenc
     };
   }, []);
 
-  const tipoClienteTexto = tipoCliente === 'atendimento' ? 'Atendimento' : 'Agendamento';
+  const tipoClienteTexto = 
+    tipoCliente === 'atendimento' ? 'Atendimento' : 
+    tipoCliente === 'agendamento' ? 'Agendamento' : 
+    'Administração';
 
   const mensagemCredenciais = `Suas credenciais para acessar a conta são:
 - E-mail: ${email}

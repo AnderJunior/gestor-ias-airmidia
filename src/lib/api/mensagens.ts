@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient';
+import { triggerWebhookCriarCliente } from './webhookTrigger';
 import { getConnectedInstances } from './whatsapp';
 import { Mensagem } from '@/types/domain';
 import { getAtendimentoById } from './atendimentos';
@@ -349,7 +350,14 @@ export async function createMensagemFromEvolutionAPI(
     const { data: novoCliente, error: clienteError } = await supabase
       .from('clientes')
       .insert({ telefone: telefoneRemetente })
-      .select()
+      .select(`
+        *,
+        usuarios:usuario_id(
+          id,
+          nome,
+          telefone_ia
+        )
+      `)
       .single();
 
     if (clienteError) {
@@ -357,6 +365,25 @@ export async function createMensagemFromEvolutionAPI(
       return null;
     }
     clienteId = novoCliente.id;
+
+    // Acionar webhook de criação de cliente
+    // Usar o usuario_id do cliente criado (dono da instância WhatsApp) para buscar webhooks
+    triggerWebhookCriarCliente({
+      id: novoCliente.id,
+      nome: novoCliente.nome || '',
+      telefone: novoCliente.telefone || '',
+      foto_perfil: novoCliente.foto_perfil || undefined,
+      usuario_id: novoCliente.usuario_id,
+      created_at: novoCliente.created_at,
+      updated_at: novoCliente.updated_at,
+      usuario: (novoCliente as any).usuarios ? {
+        id: (novoCliente as any).usuarios.id,
+        nome: (novoCliente as any).usuarios.nome,
+        telefone_ia: (novoCliente as any).usuarios.telefone_ia,
+      } : undefined,
+    }, novoCliente.usuario_id).catch((err) => {
+      console.error('Erro ao acionar webhook criar_cliente:', err);
+    });
   }
 
   // Buscar instância WhatsApp pelo telefone

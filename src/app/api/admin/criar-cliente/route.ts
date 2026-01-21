@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { triggerWebhookCriarCliente } from '@/lib/api/webhookTrigger';
 
 // Função para obter cliente Supabase com anon key
 function getSupabaseClient() {
@@ -81,6 +82,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Buscar a coluna do kanban com ordem = 1 para usar como fase padrão
+    let fasePadrao = fase; // Usar fase fornecida se existir
+    if (!fasePadrao) {
+      const { data: colunaKanban, error: kanbanError } = await supabaseAdmin
+        .from('kanban_colunas')
+        .select('id')
+        .eq('ordem', 1)
+        .order('ordem', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (!kanbanError && colunaKanban) {
+        fasePadrao = colunaKanban.id;
+      } else {
+        // Fallback para 'teste' se não encontrar coluna com ordem = 1
+        fasePadrao = 'teste';
+      }
+    }
+
     // Criar usuário no Supabase Auth
     const { data: authData, error: createAuthError } = await supabaseAdmin.auth.admin.createUser({
       email,
@@ -112,7 +132,7 @@ export async function POST(request: NextRequest) {
         telefone_ia,
         tipo_marcacao,
         tipo: 'cliente',
-        fase: fase || 'teste', // Usar fase fornecida ou padrão 'teste'
+        fase: fasePadrao, // Usar fase fornecida ou coluna kanban com ordem = 1
         ativo: true,
       })
       .select()
@@ -219,6 +239,27 @@ export async function POST(request: NextRequest) {
         },
         { status: 201 }
       );
+    }
+
+    // Acionar webhook de criação de cliente
+    // Passar o usuario_id do admin que criou o cliente para buscar os webhooks corretos
+    try {
+      await triggerWebhookCriarCliente({
+        id: usuarioData.id,
+        nome: usuarioData.nome || '',
+        telefone: usuarioData.telefone_ia || '',
+        foto_perfil: undefined,
+        usuario_id: user.id, // ID do admin que criou
+        created_at: usuarioData.created_at,
+        updated_at: usuarioData.updated_at,
+        usuario: {
+          id: user.id,
+          nome: null, // Pode buscar se necessário
+          telefone_ia: null,
+        },
+      }, user.id); // Passar o usuario_id do admin
+    } catch (err) {
+      console.error('Erro ao acionar webhook criar_cliente:', err);
     }
 
     return NextResponse.json(

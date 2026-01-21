@@ -13,6 +13,7 @@ const pageTitles: Record<string, string> = {
   [ROUTES.DASHBOARD]: 'Dashboard',
   [ROUTES.ATENDIMENTO]: 'Atendimento',
   [ROUTES.MENSAGENS]: 'Mensagens',
+  [ROUTES.CONFIGURACOES]: 'Configurações',
   [ROUTES.ADMIN_DASHBOARD]: 'Dashboard',
   [ROUTES.ADMIN_CLIENTES]: 'Clientes',
 };
