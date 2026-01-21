@@ -21,6 +21,11 @@ export default function AtendimentoPage() {
   const { isOpen, selectedAtendimentoId, openSidebar, closeSidebar } = useSidebar();
   const { usuario } = useUsuario();
 
+  // Converter tipo_marcacao para o tipo esperado pelos componentes
+  const tipoMarcacao = usuario?.tipo_marcacao === 'atendimento' || usuario?.tipo_marcacao === 'agendamento'
+    ? usuario.tipo_marcacao
+    : undefined;
+
   // Listener para abrir atendimento quando navegar via notificação
   useEffect(() => {
     const handleOpenAtendimento = async (event: Event) => {
@@ -109,7 +114,7 @@ export default function AtendimentoPage() {
             loading={usuario?.tipo_marcacao === 'agendamento' ? loadingAgendamentos : loading}
             onSelectAtendimento={openSidebar}
             onRefresh={usuario?.tipo_marcacao === 'agendamento' ? refetchAgendamentos : refetch}
-            tipoMarcacao={usuario?.tipo_marcacao}
+            tipoMarcacao={tipoMarcacao}
           />
         ) : activeTab === 'kanban' ? (
           <AtendimentoKanban
@@ -118,7 +123,7 @@ export default function AtendimentoPage() {
             loading={usuario?.tipo_marcacao === 'agendamento' ? loadingAgendamentos : loading}
             onSelectAtendimento={openSidebar}
             onStatusUpdate={usuario?.tipo_marcacao === 'agendamento' ? refetchAgendamentos : refetch}
-            tipoMarcacao={usuario?.tipo_marcacao}
+            tipoMarcacao={tipoMarcacao}
           />
         ) : (
           <AtendimentoCalendar
