@@ -1,4 +1,5 @@
 import { getWebhooksAtivosPorAcao } from './webhooks';
+import { supabase } from '../supabaseClient';
 
 export interface WebhookPayload {
   action: string;
@@ -39,23 +40,45 @@ export async function triggerWebhook(
       data: dados,
     };
 
+    // No cliente (navegador), usar a API como proxy para evitar CORS ao chamar webhooks externos (ex: N8N)
+    const isClient = typeof window !== 'undefined';
+    let authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (isClient) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        authHeaders['Authorization'] = `Bearer ${session.access_token}`;
+      }
+    }
+
     // Acionar todos os webhooks em paralelo
     const promises = webhooks.map(async (webhook) => {
       try {
         console.log(`Enviando webhook para ${webhook.nome} (${webhook.webhook_url})`);
-        const response = await fetch(webhook.webhook_url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        });
+
+        let response: Response;
+        if (isClient) {
+          // Cliente: proxy via API do Next.js (evita CORS)
+          response = await fetch('/api/webhooks/disparar', {
+            method: 'POST',
+            headers: authHeaders,
+            body: JSON.stringify({ url: webhook.webhook_url, payload }),
+          });
+        } else {
+          // Servidor: fetch direto (não sofre CORS)
+          response = await fetch(webhook.webhook_url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+        }
 
         if (!response.ok) {
+          const resData = isClient ? await response.json().catch(() => ({})) : null;
           console.error(`Erro ao acionar webhook ${webhook.nome}:`, {
             status: response.status,
             statusText: response.statusText,
             url: webhook.webhook_url,
+            ...(resData && { detail: resData }),
           });
         } else {
           console.log(`Webhook ${webhook.nome} acionado com sucesso`);
