@@ -792,7 +792,7 @@ function TarefasComponent({
         <div className="space-y-2 mb-4">
           {tarefasVisiveis.length > 0 && tarefasVisiveis.map((tarefa) => {
               const dataVencimento = formatarDataVencimento(tarefa.data_vencimento);
-              const isVencida = tarefa.data_vencimento && new Date(tarefa.data_vencimento) < new Date() && tarefa.status !== 'concluida';
+              const isVencida = !!(tarefa.data_vencimento && new Date(tarefa.data_vencimento) < new Date() && tarefa.status !== 'concluida');
               
               return (
                 <div key={tarefa.id} className="flex items-start gap-3 group p-2 rounded-lg hover:bg-gray-50 transition-colors">
