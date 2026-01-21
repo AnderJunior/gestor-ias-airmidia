@@ -5,11 +5,16 @@ import { createPortal } from 'react-dom';
 import { Search, X } from 'lucide-react';
 import { getAdministradores, Usuario } from '@/lib/api/usuarios';
 
+type ResponsavelBasico = {
+  id: string;
+  nome: string | null;
+};
+
 interface SelecionarResponsavelPopoverProps {
   isOpen: boolean;
   onClose: () => void;
   onSelect: (admin: Usuario | null) => void;
-  responsavelAtual?: Usuario | null;
+  responsavelAtual?: Usuario | ResponsavelBasico | null;
   buttonRef: React.RefObject<HTMLButtonElement>;
 }
 
