@@ -28,7 +28,12 @@ export default function DashboardPage() {
     }
   }, [usuario, loadingUsuario, router]);
   // Só usar tipoMarcacao quando usuario estiver carregado, senão undefined para evitar busca prematura
-  const tipoMarcacao = loadingUsuario ? undefined : (usuario?.tipo_marcacao || 'atendimento');
+  // Converter tipo_marcacao para o tipo esperado pelos hooks (excluindo 'administracao')
+  const tipoMarcacao = loadingUsuario 
+    ? undefined 
+    : (usuario?.tipo_marcacao === 'atendimento' || usuario?.tipo_marcacao === 'agendamento'
+        ? usuario.tipo_marcacao
+        : 'atendimento');
   const { dados: dadosPorMes, loading: loadingDadosPorMes } = useDadosPorMes(tipoMarcacao, 6);
   const { atendimentos, agendamentos, loading: loadingRecentItems } = useRecentItems(tipoMarcacao);
   const { atendimentos: todosAtendimentos } = useAtendimentos();
