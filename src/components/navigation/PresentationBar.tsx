@@ -75,7 +75,7 @@ export function PresentationBar() {
     }
   };
 
-  if (!shouldShow) return null;
+  if (!shouldShow || !state) return null;
 
   return (
     <div className="w-full text-white border-b border-black/10" style={{ backgroundColor: '#880BDB' }}>
