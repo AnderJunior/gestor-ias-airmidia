@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { triggerWebhookCriarCliente } from '@/lib/api/webhookTrigger';
+import { obterInformacoesConexao } from '@/lib/api/evolution';
 
 // Função para obter cliente Supabase com anon key
 function getSupabaseClient() {
@@ -170,8 +171,9 @@ export async function POST(request: NextRequest) {
       } else {
         // Criar registro na tabela whatsapp_instances
         // NOTA: Isso apenas cria o registro na tabela, NÃO cria instância na Evolution API
+        // IMPORTANTE: usar usuarioData.id (cliente criado) e não authData.user.id (admin)
         const insertData: any = {
-          usuario_id: authData.user.id,
+          usuario_id: usuarioData.id, // Usar o ID do cliente criado, não do admin
           telefone: telefone_ia,
           instance_name: instanceName,
           evolution_api_instance_id: instanceName,
@@ -226,6 +228,48 @@ export async function POST(request: NextRequest) {
           );
         } else {
           console.log('Registro WhatsApp criado com sucesso na tabela:', instanceData);
+          
+          // Criar instância na Evolution API
+          try {
+            console.log(`Criando instância na Evolution API: ${instanceName} para telefone: ${telefone_ia}`);
+            const connectionInfo = await obterInformacoesConexao(instanceName, telefone_ia);
+            
+            if (connectionInfo) {
+              // Se a instância foi criada e retornou QR code, atualizar no banco
+              const qrCodeBase64 = connectionInfo.qrcode?.base64;
+              const qrCodeString = qrCodeBase64 ? `data:image/png;base64,${qrCodeBase64}` : null;
+              
+              if (qrCodeString) {
+                await supabaseAdmin
+                  .from('whatsapp_instances')
+                  .update({
+                    qr_code: qrCodeString,
+                    status: 'conectando',
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('telefone', telefone_ia);
+                
+                console.log('Instância criada na Evolution API e QR code atualizado no banco');
+              } else {
+                console.log('Instância criada na Evolution API (sem QR code na resposta inicial)');
+                // Atualizar status mesmo sem QR code
+                await supabaseAdmin
+                  .from('whatsapp_instances')
+                  .update({
+                    status: 'conectando',
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('telefone', telefone_ia);
+              }
+            } else {
+              console.log('Instância já existe na Evolution API ou não foi criada');
+            }
+          } catch (evolutionError: any) {
+            console.error('Erro ao criar instância na Evolution API:', evolutionError);
+            console.error('Detalhes do erro:', evolutionError.message || evolutionError);
+            // Não falhar completamente, apenas logar o erro
+            // O usuário poderá criar a instância manualmente depois
+          }
         }
       }
     } catch (instanceError: any) {

@@ -27,7 +27,7 @@ export function WhatsAppConnectionModal({
   const [timeRemaining, setTimeRemaining] = useState(0);
 
   useEffect(() => {
-    if (isOpen && instanceName) {
+    if (isOpen && (instanceName || telefone)) {
       carregarInformacoesConexao();
     }
   }, [isOpen, instanceName, telefone]);

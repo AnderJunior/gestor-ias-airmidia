@@ -1313,11 +1313,8 @@ export default function ClienteDetailPage() {
       ? cliente.instancias[0] 
       : null;
     
-    if (!instancia) {
-      alert('Este cliente não possui instância WhatsApp cadastrada.');
-      return;
-    }
-
+    // Sempre permitir editar, mesmo sem instância cadastrada
+    // O modal irá criar uma nova instância se necessário
     setInstanciaSelecionada(instancia);
     setShowEditInstanceModal(true);
   };
@@ -1893,6 +1890,8 @@ export default function ClienteDetailPage() {
           setInstanciaSelecionada(null);
         }}
         instancia={instanciaSelecionada}
+        clienteId={cliente?.id}
+        telefone={cliente?.telefone_ia || null}
         onSuccess={handleSuccessEdit}
       />
 

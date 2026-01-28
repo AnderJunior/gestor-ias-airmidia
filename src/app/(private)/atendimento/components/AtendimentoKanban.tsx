@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Atendimento, Agendamento } from '@/types/domain';
 import { formatTimeAgo } from '@/lib/utils/dates';
@@ -62,10 +62,47 @@ export function AtendimentoKanban({
   const isAgendamento = tipoMarcacao === 'agendamento';
   const columns = isAgendamento ? columnsAgendamento : columnsAtendimento;
 
+  // Usar refs para rastrear os dados anteriores e evitar loops infinitos
+  const prevDataRef = useRef<{ atendimentos: Map<string, string>, agendamentos: Map<string, string> }>({
+    atendimentos: new Map(),
+    agendamentos: new Map()
+  });
+
   // Limpar atualizações otimistas apenas quando os dados realmente mudarem com o status correto
   useEffect(() => {
+    // Criar mapas dos status atuais
+    const currentAtendimentosStatus = new Map(
+      atendimentos.map(a => [a.id, a.status || ''])
+    );
+    const currentAgendamentosStatus = new Map(
+      agendamentos.map(a => [a.id, a.status || ''])
+    );
+
+    // Verificar se houve mudança real nos status
+    const atendimentosChanged = 
+      atendimentos.length !== prevDataRef.current.atendimentos.size ||
+      atendimentos.some(a => prevDataRef.current.atendimentos.get(a.id) !== (a.status || ''));
+
+    const agendamentosChanged = 
+      agendamentos.length !== prevDataRef.current.agendamentos.size ||
+      agendamentos.some(a => prevDataRef.current.agendamentos.get(a.id) !== (a.status || ''));
+
+    // Só atualizar se houver mudança real
+    if (!atendimentosChanged && !agendamentosChanged) {
+      return;
+    }
+
+    // Atualizar as referências
+    prevDataRef.current = {
+      atendimentos: currentAtendimentosStatus,
+      agendamentos: currentAgendamentosStatus
+    };
+
+    // Limpar atualizações otimistas sincronizadas
     setOptimisticUpdates(prev => {
       const newMap = new Map(prev);
+      let hasChanges = false;
+
       // Remover apenas as atualizações otimistas que já foram sincronizadas
       // (ou seja, quando o status no servidor corresponde ao status otimista)
       for (const [itemId, optimisticStatus] of prev.entries()) {
@@ -75,18 +112,23 @@ export function AtendimentoKanban({
             // Para coluna "agendado", aceita tanto 'agendado' quanto 'confirmado'
             if (optimisticStatus === 'agendado' && (agendamento.status === 'agendado' || agendamento.status === 'confirmado')) {
               newMap.delete(itemId);
+              hasChanges = true;
             } else if (agendamento.status === optimisticStatus) {
               newMap.delete(itemId);
+              hasChanges = true;
             }
           }
         } else {
           const atendimento = atendimentos.find(a => a.id === itemId);
           if (atendimento && atendimento.status === optimisticStatus) {
             newMap.delete(itemId);
+            hasChanges = true;
           }
         }
       }
-      return newMap;
+
+      // Só retornar novo mapa se houver mudanças
+      return hasChanges ? newMap : prev;
     });
   }, [atendimentos, agendamentos, isAgendamento]);
 

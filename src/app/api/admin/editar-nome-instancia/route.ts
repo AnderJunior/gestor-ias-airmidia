@@ -68,32 +68,108 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { instanciaId, nomeInstancia } = body;
+    const { instanciaId, clienteId, nomeInstancia, telefone } = body;
 
-    if (!instanciaId || !nomeInstancia) {
+    if (!nomeInstancia) {
       return NextResponse.json(
-        { error: 'ID da instância e nome são obrigatórios' },
+        { error: 'Nome da instância é obrigatório' },
         { status: 400 }
       );
     }
 
-    // Atualizar nome da instância
-    const { data: instanciaData, error: updateError } = await supabaseAdmin
-      .from('whatsapp_instances')
-      .update({
+    let instanciaData;
+
+    // Se tem instanciaId, atualizar instância existente
+    if (instanciaId) {
+      // Se também tem clienteId, atualizar o usuario_id para corrigir vínculo errado
+      const updateData: any = {
         instance_name: nomeInstancia.trim(),
         evolution_api_instance_id: nomeInstancia.trim(), // Atualizar também o ID da Evolution API
         updated_at: new Date().toISOString(),
-      })
-      .eq('id', instanciaId)
-      .select()
-      .single();
+      };
+      
+      // Se clienteId foi fornecido, atualizar também o usuario_id
+      if (clienteId) {
+        updateData.usuario_id = clienteId;
+      }
+      
+      const { data, error: updateError } = await supabaseAdmin
+        .from('whatsapp_instances')
+        .update(updateData)
+        .eq('id', instanciaId)
+        .select()
+        .single();
 
-    if (updateError) {
-      console.error('Erro ao atualizar nome da instância:', updateError);
+      if (updateError) {
+        console.error('Erro ao atualizar nome da instância:', updateError);
+        return NextResponse.json(
+          { error: updateError.message || 'Erro ao atualizar nome da instância' },
+          { status: 500 }
+        );
+      }
+
+      instanciaData = data;
+    } 
+    // Se não tem instanciaId mas tem clienteId e telefone, criar ou atualizar instância
+    else if (clienteId && telefone) {
+      // Buscar instância existente pelo telefone
+      const { data: existingInstance } = await supabaseAdmin
+        .from('whatsapp_instances')
+        .select('id')
+        .eq('telefone', telefone)
+        .single();
+
+      if (existingInstance) {
+        // Atualizar instância existente
+        const { data, error: updateError } = await supabaseAdmin
+          .from('whatsapp_instances')
+          .update({
+            instance_name: nomeInstancia.trim(),
+            evolution_api_instance_id: nomeInstancia.trim(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingInstance.id)
+          .select()
+          .single();
+
+        if (updateError) {
+          console.error('Erro ao atualizar nome da instância:', updateError);
+          return NextResponse.json(
+            { error: updateError.message || 'Erro ao atualizar nome da instância' },
+            { status: 500 }
+          );
+        }
+
+        instanciaData = data;
+      } else {
+        // Criar nova instância
+        const { data, error: createError } = await supabaseAdmin
+          .from('whatsapp_instances')
+          .insert({
+            usuario_id: clienteId,
+            telefone: telefone,
+            instance_name: nomeInstancia.trim(),
+            evolution_api_instance_id: nomeInstancia.trim(),
+            status: 'desconectado',
+            updated_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error('Erro ao criar instância:', createError);
+          return NextResponse.json(
+            { error: createError.message || 'Erro ao criar instância' },
+            { status: 500 }
+          );
+        }
+
+        instanciaData = data;
+      }
+    } else {
       return NextResponse.json(
-        { error: updateError.message || 'Erro ao atualizar nome da instância' },
-        { status: 500 }
+        { error: 'É necessário fornecer instanciaId ou (clienteId e telefone)' },
+        { status: 400 }
       );
     }
 

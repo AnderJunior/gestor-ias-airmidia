@@ -8,6 +8,7 @@ import { useAtendimentosNotifications } from '@/hooks/useAtendimentosNotificatio
 import { useAgendamentosNotifications } from '@/hooks/useAgendamentosNotifications';
 import { Sidebar } from '@/components/navigation/Sidebar';
 import { Topbar } from '@/components/navigation/Topbar';
+import { PresentationBar } from '@/components/navigation/PresentationBar';
 import { VerificacaoDadosIniciais } from '@/components/usuarios/VerificacaoDadosIniciais';
 import { VerificacaoConexaoWhatsApp } from '@/components/whatsapp/VerificacaoConexaoWhatsApp';
 import { NotificationsProvider } from '@/contexts/NotificationsContext';
@@ -53,6 +54,7 @@ export default function PrivateLayout({
       <div className="flex h-screen bg-gray-50 overflow-hidden">
         <Sidebar />
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <PresentationBar />
           <Topbar />
           <main className="flex-1 p-8 bg-gray-50 overflow-auto">{children}</main>
         </div>

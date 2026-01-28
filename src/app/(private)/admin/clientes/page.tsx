@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAdminClientes } from '@/hooks/useAdminClientes';
 import { getWhatsAppInstances } from '@/lib/api/whatsapp';
 import { Usuario } from '@/lib/api/usuarios';
@@ -25,6 +25,8 @@ import { ColunaActionsMenu } from '@/components/admin/ColunaActionsMenu';
 import { EditarNomeInstanciaModal } from '@/components/admin/EditarNomeInstanciaModal';
 import { EditarClienteModal } from '@/components/admin/EditarClienteModal';
 import { getContagemTarefasPendentesPorClientes } from '@/lib/api/tarefas';
+import { setPresentationSession } from '@/lib/presentationSession';
+import { useAuth } from '@/hooks/useAuth';
 
 interface ClienteComStatus extends Usuario {
   statusEvolution?: 'conectado' | 'desconectado' | 'conectando' | 'erro';
@@ -35,7 +37,9 @@ const ITEMS_PER_PAGE = 6;
 
 export default function AdminClientesPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { clientes, loading, refetch } = useAdminClientes();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [clientesComStatus, setClientesComStatus] = useState<ClienteComStatus[]>([]);
@@ -253,6 +257,9 @@ export default function AdminClientesPage() {
     }
   };
 
+  // Formatar atendimento atual - removido pois atendimento_atual está na tabela clientes, não usuarios
+  // Esta função não será mais usada na tabela de usuarios
+
   const getInitials = (name?: string | null) => {
     if (!name) return '?';
     return name
@@ -433,12 +440,10 @@ export default function AdminClientesPage() {
       ? cliente.instancias[0] 
       : null;
     
-    if (!instancia) {
-      alert('Este cliente não possui instância WhatsApp cadastrada.');
-      return;
-    }
-
+    // Sempre permitir editar, mesmo sem instância cadastrada
+    // O modal irá criar uma nova instância se necessário
     setInstanciaSelecionada(instancia);
+    setClienteSelecionado(cliente);
     setShowEditInstanceModal(true);
   };
 
@@ -459,6 +464,61 @@ export default function AdminClientesPage() {
     }
   };
 
+  const handleEntrarNaConta = async (cliente: ClienteComStatus) => {
+    if (!user) {
+      alert('Você precisa estar autenticado para entrar na conta do cliente.');
+      return;
+    }
+
+    try {
+      // Obter token de autenticação atual
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Sessão expirada. Por favor, faça login novamente.');
+        return;
+      }
+
+      // Chamar API para gerar magic link
+      const response = await fetch('/api/admin/impersonar-cliente', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          clienteId: cliente.id,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao entrar na conta do cliente');
+      }
+
+      // Salvar sessão do admin antes de fazer login no cliente
+      setPresentationSession({
+        admin: {
+          userId: user.id,
+          email: user.email || null,
+          access_token: session.access_token,
+          refresh_token: session.refresh_token || '',
+        },
+        cliente: {
+          userId: cliente.id,
+          email: data.email,
+        },
+        returnTo: pathname || '/admin/clientes',
+        startedAt: new Date().toISOString(),
+      });
+
+      // Redirecionar para o magic link
+      window.location.href = data.actionLink;
+    } catch (err: any) {
+      console.error('Erro ao entrar na conta do cliente:', err);
+      alert(err.message || 'Erro ao entrar na conta do cliente. Tente novamente.');
+    }
+  };
 
   const handleSuccessEdit = () => {
     refetch();
@@ -1078,6 +1138,7 @@ export default function AdminClientesPage() {
                           onEditInstance={() => handleEditInstance(cliente)}
                           onEditCliente={() => handleEditCliente(cliente)}
                           onDesativar={() => handleDesativarCliente(cliente)}
+                          onEntrarNaConta={() => handleEntrarNaConta(cliente)}
                         />
                       </div>
                     </td>
@@ -1277,6 +1338,7 @@ export default function AdminClientesPage() {
                                 onEditInstance={() => handleEditInstance(cliente)}
                                 onEditCliente={() => handleEditCliente(cliente)}
                                 onDesativar={() => handleDesativarCliente(cliente)}
+                                onEntrarNaConta={() => handleEntrarNaConta(cliente)}
                               />
                             </div>
                           </div>
@@ -1389,8 +1451,11 @@ export default function AdminClientesPage() {
         onClose={() => {
           setShowEditInstanceModal(false);
           setInstanciaSelecionada(null);
+          setClienteSelecionado(null);
         }}
         instancia={instanciaSelecionada}
+        clienteId={clienteSelecionado?.id}
+        telefone={clienteSelecionado?.telefone_ia || null}
         onSuccess={handleSuccessEdit}
       />
 

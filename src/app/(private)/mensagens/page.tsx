@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useMensagensPorCliente, useClientesComConversas } from '@/hooks/useMensagensPorCliente';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Search, Check, Play, Pause, Mic, ZoomIn, ZoomOut, Download, X, File, Image as ImageIcon } from 'lucide-react';
+import { Search, Check, Play, Pause, Mic, ZoomIn, ZoomOut, Download, X, File, Image as ImageIcon, Bot, User } from 'lucide-react';
 import { MensagemConversa } from '@/lib/api/mensagens';
 import { getAtendimentoByCliente, getAllAtendimentosByCliente } from '@/lib/api/atendimentos';
 import { getAgendamentoByCliente, getAllAgendamentosByCliente } from '@/lib/api/agendamentos';
@@ -426,6 +426,8 @@ export default function MensagensPage() {
   const { user } = useAuth();
   const [clientesComAtendimento, setClientesComAtendimento] = useState<Set<string>>(new Set());
   const [clientesAgendamentoStatus, setClientesAgendamentoStatus] = useState<Map<string, string>>(new Map());
+  const [atendimentoAtual, setAtendimentoAtual] = useState<'ia' | 'humano' | 'pausa'>('ia');
+  const [atualizandoAtendimento, setAtualizandoAtendimento] = useState(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
   // Estado para logs de atendimentos e agendamentos (estilo Kommo)
   interface LogItem {
@@ -1061,6 +1063,42 @@ export default function MensagensPage() {
     }
   }, []);
 
+  // Buscar atendimento_atual do cliente quando cliente for selecionado
+  useEffect(() => {
+    if (!clienteSelecionado) {
+      setAtendimentoAtual('ia');
+      return;
+    }
+    
+    // Buscar atendimento_atual do cliente atual da lista
+    const clienteAtualDaLista = clientes.find(c => c.id === clienteSelecionado);
+    if (clienteAtualDaLista?.atendimento_atual) {
+      setAtendimentoAtual(clienteAtualDaLista.atendimento_atual);
+    } else {
+      // Se não estiver na lista, buscar diretamente do banco
+      async function buscarAtendimentoAtual() {
+        try {
+          const { data, error } = await supabase
+            .from('clientes')
+            .select('atendimento_atual')
+            .eq('id', clienteSelecionado)
+            .single();
+          
+          if (!error && data?.atendimento_atual) {
+            setAtendimentoAtual(data.atendimento_atual as 'ia' | 'humano' | 'pausa');
+          } else {
+            setAtendimentoAtual('ia');
+          }
+        } catch (error) {
+          console.error('Erro ao buscar atendimento_atual:', error);
+          setAtendimentoAtual('ia');
+        }
+      }
+      
+      buscarAtendimentoAtual();
+    }
+  }, [clienteSelecionado, clientes]);
+
   // Buscar e atualizar logs quando cliente for selecionado
   useEffect(() => {
     if (!clienteSelecionado || !user?.id) {
@@ -1257,6 +1295,47 @@ export default function MensagensPage() {
     setListaModal({ isOpen: false, items: [] });
   };
 
+  // Handler para atualizar atendimento_atual
+  const handleAtualizarAtendimento = async (tipo: 'ia' | 'humano' | 'pausa') => {
+    if (!clienteSelecionado || !user?.id || atualizandoAtendimento) return;
+    
+    setAtualizandoAtendimento(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Não autenticado');
+      }
+
+      const response = await fetch('/api/admin/atualizar-atendimento-atual', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          clienteId: clienteSelecionado, // ID do cliente da tabela clientes
+          atendimentoAtual: tipo,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao atualizar tipo de atendimento');
+      }
+
+      setAtendimentoAtual(tipo);
+      
+      // Atualizar a lista de clientes para refletir a mudança
+      refetchClientes();
+    } catch (err: any) {
+      console.error('Erro ao atualizar atendimento_atual:', err);
+      alert(err.message || 'Erro ao atualizar tipo de atendimento. Tente novamente.');
+    } finally {
+      setAtualizandoAtendimento(false);
+    }
+  };
+
   return (
     <div 
       ref={containerRef}
@@ -1404,6 +1483,51 @@ export default function MensagensPage() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                {/* Ícones de Ativação de Atendimento */}
+                <div className="flex items-center gap-2">
+                  {/* Ícone Robô */}
+                  <button
+                    onClick={() => handleAtualizarAtendimento('ia')}
+                    disabled={atualizandoAtendimento}
+                    className={`p-2 rounded-lg transition-all ${
+                      atendimentoAtual === 'ia'
+                        ? 'bg-purple-100 text-purple-600'
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                    } ${atualizandoAtendimento ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    title="Ativar IA"
+                  >
+                    <Bot className="w-5 h-5" />
+                  </button>
+                  
+                  {/* Ícone Humano */}
+                  <button
+                    onClick={() => handleAtualizarAtendimento('humano')}
+                    disabled={atualizandoAtendimento}
+                    className={`p-2 rounded-lg transition-all ${
+                      atendimentoAtual === 'humano'
+                        ? 'bg-blue-100 text-blue-600'
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                    } ${atualizandoAtendimento ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    title="Humano assumir conversa"
+                  >
+                    <User className="w-5 h-5" />
+                  </button>
+                  
+                  {/* Ícone Pausa */}
+                  <button
+                    onClick={() => handleAtualizarAtendimento('pausa')}
+                    disabled={atualizandoAtendimento}
+                    className={`p-2 rounded-lg transition-all ${
+                      atendimentoAtual === 'pausa'
+                        ? 'bg-yellow-100 text-yellow-600'
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                    } ${atualizandoAtendimento ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    title="Pausar atendimento da IA"
+                  >
+                    <Pause className="w-5 h-5" />
+                  </button>
+                </div>
+                
                 {(hasAtendimento || hasAgendamento) && (
                   <span className={`px-2 py-1 text-xs font-medium rounded-md ${
                     usuario?.tipo_marcacao === 'agendamento' 

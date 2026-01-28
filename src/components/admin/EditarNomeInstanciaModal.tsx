@@ -10,6 +10,8 @@ interface EditarNomeInstanciaModalProps {
   isOpen: boolean;
   onClose: () => void;
   instancia: WhatsAppInstance | null;
+  clienteId?: string;
+  telefone?: string | null;
   onSuccess: () => void;
 }
 
@@ -17,6 +19,8 @@ export function EditarNomeInstanciaModal({
   isOpen,
   onClose,
   instancia,
+  clienteId,
+  telefone,
   onSuccess,
 }: EditarNomeInstanciaModalProps) {
   const [nomeInstancia, setNomeInstancia] = useState('');
@@ -26,6 +30,10 @@ export function EditarNomeInstanciaModal({
   useEffect(() => {
     if (instancia) {
       setNomeInstancia(instancia.instance_name || '');
+      setError('');
+    } else {
+      // Se não há instância, inicializar com string vazia
+      setNomeInstancia('');
       setError('');
     }
   }, [instancia, isOpen]);
@@ -39,8 +47,9 @@ export function EditarNomeInstanciaModal({
       return;
     }
 
-    if (!instancia) {
-      setError('Instância não encontrada');
+    // Se não há instância, precisa ter clienteId e telefone para criar
+    if (!instancia && (!clienteId || !telefone)) {
+      setError('Não é possível criar instância sem cliente e telefone');
       return;
     }
 
@@ -51,16 +60,31 @@ export function EditarNomeInstanciaModal({
         throw new Error('Não autenticado');
       }
 
+      const requestBody: any = {
+        nomeInstancia: nomeInstancia.trim(),
+      };
+
+      // Se tem instância, usar instanciaId
+      if (instancia) {
+        requestBody.instanciaId = instancia.id;
+        // Sempre enviar clienteId quando disponível para corrigir usuario_id se necessário
+        if (clienteId) {
+          requestBody.clienteId = clienteId;
+        }
+      } 
+      // Se não tem instância mas tem clienteId e telefone, usar esses dados
+      else if (clienteId && telefone) {
+        requestBody.clienteId = clienteId;
+        requestBody.telefone = telefone;
+      }
+
       const response = await fetch('/api/admin/editar-nome-instancia', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({
-          instanciaId: instancia.id,
-          nomeInstancia: nomeInstancia.trim(),
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -99,6 +123,14 @@ export function EditarNomeInstanciaModal({
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
             <p className="text-sm text-red-600">{error}</p>
+          </div>
+        )}
+
+        {!instancia && (
+          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-800">
+              Este cliente não possui instância WhatsApp cadastrada. Uma nova instância será criada.
+            </p>
           </div>
         )}
 

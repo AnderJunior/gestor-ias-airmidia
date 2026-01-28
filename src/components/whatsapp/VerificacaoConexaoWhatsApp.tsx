@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useUsuario } from '@/hooks/useUsuario';
-import { verificarConnectionState } from '@/lib/api/evolution';
+import { verificarConnectionState, gerarNomeInstancia } from '@/lib/api/evolution';
 import { sincronizarStatusInstancia, getInstanceNameByUsuario } from '@/lib/api/whatsapp';
 import { ConnectionNotification } from '@/components/notifications/ConnectionNotification';
 import { WhatsAppConnectionModal } from './WhatsAppConnectionModal';
@@ -19,6 +19,13 @@ export function VerificacaoConexaoWhatsApp() {
   // Buscar instanceName da tabela whatsapp_instances
   const [instanceName, setInstanceName] = useState<string>('');
   const telefoneUsuario = usuario?.telefone_ia || null;
+  
+  // Gerar instanceName se não existir no banco mas houver telefone e nome
+  const finalInstanceName = useMemo(() => {
+    return instanceName || (telefoneUsuario && usuario?.nome 
+      ? gerarNomeInstancia(usuario.nome, telefoneUsuario) 
+      : '');
+  }, [instanceName, telefoneUsuario, usuario?.nome]);
 
   const verificando = authLoading || usuarioLoading;
 
@@ -59,8 +66,14 @@ export function VerificacaoConexaoWhatsApp() {
 
   // Verificar status na Evolution API periodicamente (consolidado - única verificação)
   useEffect(() => {
-    // Não verificar se for administrador, se o modal estiver aberto ou se não tiver dados do usuário
-    if (usuario?.tipo === 'administracao' || mostrarModal || !telefoneUsuario || !instanceName || !user?.id) {
+    // Não verificar se for administrador ou se o modal estiver aberto
+    if (usuario?.tipo === 'administracao' || mostrarModal || !telefoneUsuario || !user?.id) {
+      return;
+    }
+    
+    // Se não houver instanceName final, mostrar notificação para criar instância
+    if (!finalInstanceName) {
+      setMostrarNotificacao(true);
       return;
     }
 
@@ -78,7 +91,7 @@ export function VerificacaoConexaoWhatsApp() {
 
       try {
         // Verificar status na Evolution API usando connectionState
-        const state = await verificarConnectionState(instanceName);
+        const state = await verificarConnectionState(finalInstanceName);
         
         if (!isMounted) return;
 
@@ -90,24 +103,28 @@ export function VerificacaoConexaoWhatsApp() {
             statusSupabase = 'conectando';
           } else if (state === 'close') {
             statusSupabase = 'desconectado';
+          } else if (state === null) {
+            // Instância não existe na Evolution API
+            statusSupabase = 'desconectado';
+            console.log(`Instância ${instanceName} não encontrada na Evolution API`);
           } else {
             statusSupabase = 'desconectado';
           }
 
           // Atualizar Supabase
           try {
-            await sincronizarStatusInstancia(instanceName, telefoneUsuario, statusSupabase, user.id);
+            await sincronizarStatusInstancia(finalInstanceName, telefoneUsuario, statusSupabase, user.id);
             console.log(`Status atualizado no Supabase: ${statusSupabase} (Evolution retornou: ${state})`);
           } catch (syncError) {
             console.error('Erro ao sincronizar status com Supabase:', syncError);
           }
 
-          // Mostrar notificação se não estiver conectado
+          // Mostrar notificação se não estiver conectado (incluindo quando instância não existe)
           setMostrarNotificacao(true);
         } else {
           // Se estiver "open", atualizar Supabase como conectado e esconder notificação
           try {
-            await sincronizarStatusInstancia(instanceName, telefoneUsuario, 'conectado', user.id);
+            await sincronizarStatusInstancia(finalInstanceName, telefoneUsuario, 'conectado', user.id);
             setMostrarNotificacao(false);
             setMostrarModal(false);
           } catch (syncError) {
@@ -116,6 +133,8 @@ export function VerificacaoConexaoWhatsApp() {
         }
       } catch (error) {
         console.error('Erro ao verificar status na Evolution API:', error);
+        // Em caso de erro, mostrar notificação para que o usuário possa tentar conectar
+        setMostrarNotificacao(true);
       }
     };
 
@@ -190,11 +209,11 @@ export function VerificacaoConexaoWhatsApp() {
         onClose={handleFecharNotificacao}
         onConnectClick={handleConectarClick}
       />
-      {instanceName && (
+      {(finalInstanceName || telefoneUsuario) && (
         <WhatsAppConnectionModal
           isOpen={mostrarModal}
           onClose={handleFecharModal}
-          instanceName={instanceName}
+          instanceName={finalInstanceName || ''}
           telefone={telefoneUsuario || undefined}
         />
       )}
