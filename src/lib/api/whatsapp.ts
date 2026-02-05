@@ -315,7 +315,8 @@ export async function verificarStatusConexaoSupabase(instanceName: string): Prom
 }
 
 /**
- * Obtém o usuario_id da instância existente ou do usuário autenticado
+ * Obtém o usuario_id da instância existente no banco (nunca do auth).
+ * Evita que, ao "entrar na conta" do cliente, a sessão do admin sobrescreva o usuario_id.
  */
 async function obterUsuarioIdParaSincronizacao(instanceName: string, telefone: string): Promise<string | null> {
   // Primeiro, tentar buscar da instância existente no Supabase
@@ -323,25 +324,27 @@ async function obterUsuarioIdParaSincronizacao(instanceName: string, telefone: s
   if (instance?.usuario_id) {
     return instance.usuario_id;
   }
-  
+
   // Se não encontrou, tentar buscar pelo telefone
   const instanceByTelefone = await supabase
     .from('whatsapp_instances')
     .select('usuario_id')
     .eq('telefone', telefone)
     .single();
-  
+
   if (instanceByTelefone.data?.usuario_id) {
     return instanceByTelefone.data.usuario_id;
   }
-  
-  // Último recurso: buscar do auth (mas isso é raro)
-  const { data: { user } } = await supabase.auth.getUser();
-  return user?.id || null;
+
+  // Não usar auth.getUser() aqui: ao impersonar cliente, a sessão pode ainda ser do admin
+  // e sobrescreveria o usuario_id do cliente com o do admin.
+  return null;
 }
 
 /**
- * Sincroniza o status da instância no Supabase com base no status da Evolution API
+ * Sincroniza o status da instância no Supabase com base no status da Evolution API.
+ * Só atualiza usuario_id quando ele é passado ou encontrado no banco; nunca usa o usuário autenticado
+ * para não sobrescrever com o ID do admin ao "entrar na conta" do cliente.
  */
 export async function sincronizarStatusInstancia(
   instanceName: string,
@@ -350,50 +353,63 @@ export async function sincronizarStatusInstancia(
   usuarioId?: string,
   qrCode?: string
 ): Promise<WhatsAppInstance> {
-  // Se não forneceu usuarioId, tentar obter de forma otimizada
   let finalUsuarioId: string | undefined = usuarioId;
   if (!finalUsuarioId) {
     const usuarioIdObtido = await obterUsuarioIdParaSincronizacao(instanceName, telefone);
     finalUsuarioId = usuarioIdObtido || undefined;
   }
-  
-  if (!finalUsuarioId) {
-    throw new Error('Usuário não autenticado ou não encontrado');
-  }
 
   const updateData: any = {
-    usuario_id: finalUsuarioId,
     instance_name: instanceName,
     status,
     updated_at: new Date().toISOString(),
   };
 
+  // Só incluir usuario_id quando sabemos com certeza (evita sobrescrever com admin ao impersonar)
+  if (finalUsuarioId) {
+    updateData.usuario_id = finalUsuarioId;
+  }
+
   if (qrCode) {
     updateData.qr_code = qrCode;
   } else if (status === 'conectado') {
-    // Limpar QR code quando conectar
     updateData.qr_code = null;
   }
 
-  const { data, error } = await supabase
-    .from('whatsapp_instances')
-    .upsert({
-      telefone,
-      ...updateData,
-    }, {
-      onConflict: 'telefone',
-    })
-    .select()
-    .single();
+  let data: WhatsAppInstance;
 
-  if (error) {
-    console.error('Error syncing instance status:', error);
-    throw error;
-  }
-
-  // Limpar cache após sincronização
   if (finalUsuarioId) {
+    // Upsert completo (insert ou update com usuario_id)
+    const result = await supabase
+      .from('whatsapp_instances')
+      .upsert(
+        { telefone, ...updateData },
+        { onConflict: 'telefone' }
+      )
+      .select()
+      .single();
+    if (result.error) {
+      console.error('Error syncing instance status:', result.error);
+      throw result.error;
+    }
+    data = result.data;
     clearInstancesCache(finalUsuarioId);
+  } else {
+    // Sem usuario_id: só atualizar linha existente (status/qr), nunca criar nem alterar dono
+    const result = await supabase
+      .from('whatsapp_instances')
+      .update(updateData)
+      .eq('telefone', telefone)
+      .select()
+      .single();
+    if (result.error) {
+      console.error('Error syncing instance status (update only):', result.error);
+      throw result.error;
+    }
+    data = result.data;
+    if (data?.usuario_id) {
+      clearInstancesCache(data.usuario_id);
+    }
   }
 
   return data;
