@@ -8,7 +8,7 @@ import { Usuario } from '@/lib/api/usuarios';
 import { WhatsAppInstance } from '@/types/domain';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
-import { ArrowLeft, Trash2, Edit, Phone, Mail, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Play, Pause, Mic, File, Image as ImageIcon, Download, ZoomIn, ZoomOut, Link2, Send, Smile, Check, CheckSquare, Square, UserPlus } from 'lucide-react';
+import { ArrowLeft, Trash2, Edit, Phone, Mail, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Play, Pause, Mic, File, Image as ImageIcon, Download, ZoomIn, ZoomOut, Link2, Send, Smile, Check, CheckSquare, Square, UserPlus, Bot, User } from 'lucide-react';
 import { ROUTES } from '@/lib/constants';
 import { ClienteActionsMenu } from '@/components/admin/ClienteActionsMenu';
 import { EditarClienteModal } from '@/components/admin/EditarClienteModal';
@@ -1627,6 +1627,7 @@ export default function ClienteDetailPage() {
                   mensagens.map((mensagem: MensagemConversa) => {
                     const remetenteRaw = mensagem.remetente?.toLowerCase() || '';
                     const isCliente = remetenteRaw.includes('cliente') || remetenteRaw === 'cliente';
+                    const isHumano = remetenteRaw.includes('humano') || remetenteRaw === 'humano';
                     const dataMensagem = mensagem.data_e_hora || mensagem.created_at;
                     
                     const base64ImagemValido = mensagem.base64_imagem && 
@@ -1667,7 +1668,9 @@ export default function ClienteDetailPage() {
                             className={`rounded-2xl px-4 py-2 ${
                               isCliente
                                 ? 'bg-gray-800 text-white'
-                                : 'bg-gray-100 text-gray-900'
+                                : isHumano
+                                  ? 'bg-primary-600 text-white'
+                                  : 'bg-gray-100 text-gray-900'
                             }`}
                           >
                             {temImagem && dataUriImagem && (
@@ -1685,7 +1688,7 @@ export default function ClienteDetailPage() {
                                   onClick={() => {
                                     setImagemModal({
                                       src: dataUriImagem,
-                                      remetente: isCliente ? cliente.nome || 'Cliente' : 'Você',
+                                      remetente: isCliente ? cliente.nome || 'Cliente' : (isHumano ? 'Você' : 'Assistente'),
                                       dataHora: formatarDataHora(dataMensagem),
                                     });
                                     setZoom(1);
@@ -1728,9 +1731,16 @@ export default function ClienteDetailPage() {
                               </p>
                             )}
                           </div>
-                          <p className={`text-xs text-gray-500 pb-1 ${isCliente ? 'text-left' : 'text-right'}`}>
-                            {formatarDataHora(dataMensagem)}
-                          </p>
+                          <div className={`flex items-center gap-1.5 pb-1 ${isCliente ? 'justify-start' : 'justify-end'}`}>
+                            {!isCliente && (
+                              <span className={`flex-shrink-0 p-0.5 rounded ${isHumano ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`} title={isHumano ? 'Humano' : 'IA'}>
+                                {isHumano ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
+                              </span>
+                            )}
+                            <p className={`text-xs text-gray-500 ${isCliente ? 'text-left' : 'text-right'}`}>
+                              {formatarDataHora(dataMensagem)}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     );

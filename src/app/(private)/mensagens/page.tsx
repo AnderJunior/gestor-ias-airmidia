@@ -22,6 +22,8 @@ interface MensagemExibicao {
   id: string;
   conteudo: string;
   isCliente: boolean;
+  /** Mensagens do remetente Humano ficam à direita com cor primária */
+  isHumano?: boolean;
   created_at: string;
   base64_audio?: string | null;
   base64_imagem?: string | null;
@@ -520,12 +522,14 @@ export default function MensagensPage() {
     const mensagensFormatadas: MensagemExibicao[] = mensagens.map(mensagem => {
       const remetenteRaw = mensagem.remetente?.toLowerCase() || '';
       const isCliente = remetenteRaw.includes('cliente') || remetenteRaw === 'cliente';
+      const isHumano = remetenteRaw.includes('humano') || remetenteRaw === 'humano';
       const dataMensagem = mensagem.data_e_hora || mensagem.created_at || '';
 
       return {
         id: mensagem.id || `${mensagem.cliente_id}-${dataMensagem}`,
         conteudo: mensagem.mensagem,
         isCliente,
+        isHumano,
         created_at: dataMensagem,
         base64_audio: mensagem.base64_audio,
         base64_imagem: mensagem.base64_imagem,
@@ -1730,13 +1734,15 @@ export default function MensagensPage() {
                        className={`flex ${mensagem.isCliente ? 'justify-start' : 'justify-end'}`}
                      >
                        <div className={`max-w-[70%] flex items-end gap-2 ${mensagem.isCliente ? 'flex-row' : 'flex-row-reverse'}`}>
-                         <div
-                           className={`rounded-2xl px-4 py-2 ${
-                             mensagem.isCliente
-                               ? 'bg-gray-800 text-white'
-                               : 'bg-gray-100 text-gray-900'
-                           }`}
-                         >
+                        <div
+                          className={`rounded-2xl px-4 py-2 ${
+                            mensagem.isCliente
+                              ? 'bg-gray-800 text-white'
+                              : mensagem.isHumano
+                                ? 'bg-primary-600 text-white'
+                                : 'bg-gray-100 text-gray-900'
+                          }`}
+                        >
                            {/* Exibir imagem se houver */}
                            {temImagem && dataUriImagem && (
                              <div className="mb-2">
@@ -1750,12 +1756,12 @@ export default function MensagensPage() {
                                    width: 'auto',
                                    height: 'auto',
                                  }}
-                                 onClick={() => {
-                                   setImagemModal({
-                                     src: dataUriImagem,
-                                     remetente: mensagem.isCliente ? clienteAtual?.nome || 'Cliente' : 'Você',
-                                     dataHora: formatarDataHora(mensagem.created_at),
-                                   });
+                                onClick={() => {
+                                  setImagemModal({
+                                    src: dataUriImagem,
+                                    remetente: mensagem.isCliente ? clienteAtual?.nome || 'Cliente' : (mensagem.isHumano ? 'Você' : 'Assistente'),
+                                    dataHora: formatarDataHora(mensagem.created_at),
+                                  });
                                    setZoom(1);
                                    setPosition({ x: 0, y: 0 });
                                  }}
@@ -1800,9 +1806,16 @@ export default function MensagensPage() {
                              </p>
                            )}
                          </div>
-                         <p className={`text-xs text-gray-500 pb-1 ${mensagem.isCliente ? 'text-left' : 'text-right'}`}>
-                           {formatarDataHora(mensagem.created_at)}
-                         </p>
+                         <div className={`flex items-center gap-1.5 pb-1 ${mensagem.isCliente ? 'justify-start' : 'justify-end'}`}>
+                           {!mensagem.isCliente && (
+                             <span className={`flex-shrink-0 p-0.5 rounded ${mensagem.isHumano ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`} title={mensagem.isHumano ? 'Humano' : 'IA'}>
+                               {mensagem.isHumano ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
+                             </span>
+                           )}
+                           <p className={`text-xs text-gray-500 ${mensagem.isCliente ? 'text-left' : 'text-right'}`}>
+                             {formatarDataHora(mensagem.created_at)}
+                           </p>
+                         </div>
                        </div>
                      </div>
                    );

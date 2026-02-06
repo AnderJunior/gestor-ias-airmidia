@@ -212,7 +212,7 @@ export function NotificationsModal({ isOpen, onClose }: NotificationsModalProps)
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-end pt-16 pr-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-end pt-16 pr-12 md:pr-16">
       <div className="fixed inset-0 bg-black bg-opacity-25" onClick={onClose}></div>
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
         {/* Header */}
