@@ -92,7 +92,7 @@ export function useMensagensPorCliente(clienteId: string | null) {
                 }
               })
               .catch((err) => console.error('Erro ao atualizar mensagens via realtime:', err));
-          }, REALTIME_REFETCH_DEBOUNCE_MS);
+          }, REALTIME_REFETCH_DEBOUNCE_MS) as unknown as number | ReturnType<typeof setTimeout>;
         }
       )
       .subscribe();
@@ -191,7 +191,7 @@ export function useClientesComConversas() {
       listDebounceRef.current = window.setTimeout(() => {
         listDebounceRef.current = null;
         if (isMounted) updateList(showLoading);
-      }, CLIENTES_LIST_DEBOUNCE_MS);
+      }, CLIENTES_LIST_DEBOUNCE_MS) as unknown as number | ReturnType<typeof setTimeout>;
     };
 
     if (!cached) {
