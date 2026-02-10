@@ -4,6 +4,17 @@ import { getConnectedInstances } from './whatsapp';
 import { Mensagem } from '@/types/domain';
 import { getAtendimentoById } from './atendimentos';
 
+/** Tamanho máximo de IDs por requisição para evitar URL longa e 400 Bad Request */
+const CHUNK_SIZE = 40;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 /**
  * Interface para mensagem baseada na estrutura real da tabela
  */
@@ -58,90 +69,66 @@ export async function getMensagensByCliente(clienteId: string, userId?: string):
     return [];
   }
 
-  const clienteIds = clientesComMesmoTelefone?.map(c => c.id) || [clienteId];
+  const clienteIds = (clientesComMesmoTelefone?.map(c => c.id) || [clienteId]).filter(
+    (id): id is string => typeof id === 'string' && id.length > 0
+  );
+  if (clienteIds.length === 0) return [];
 
-  // Buscar mensagens diretamente da tabela mensagens onde:
-  // - cliente_id está na lista de clientes com mesmo telefone
-  // - usuario_id = usuário atual
-  let mensagensDiretas: any[] = [];
-  
-  try {
-    const { data: mensagensData, error: mensagensError } = await supabase
+  const clienteTelefone = cliente.telefone;
+
+  /** Normaliza uma linha bruta da tabela mensagens para o formato esperado pela UI. */
+  function normalizarMensagem(row: any): any {
+    const clienteIdMsg = row.cliente_id || clienteId;
+    const conteudo = row.mensagem ?? row.conteudo ?? '';
+    let remetente = row.remetente;
+    if (remetente == null || remetente === '') {
+      const tipo = (row.tipo || '').toLowerCase();
+      if (tipo === 'bot') remetente = 'assistente';
+      else if (row.telefone_remetente === clienteTelefone) remetente = 'cliente';
+      else remetente = 'humano';
+    }
+    return {
+      ...row,
+      cliente_id: clienteIdMsg,
+      usuario_id: row.usuario_id || userId,
+      mensagem: conteudo,
+      remetente,
+      data_e_hora: row.data_e_hora || row.created_at || '',
+    };
+  }
+
+  // Tabela mensagens não tem coluna atendimento_id — buscar apenas por cliente_id e usuario_id, em lotes para evitar URL longa (400)
+  const chunksIds = chunk(clienteIds, CHUNK_SIZE);
+  const todas: any[] = [];
+  let orderBy: 'data_e_hora' | 'created_at' = 'data_e_hora';
+
+  for (const ids of chunksIds) {
+    let data: any[] | null = null;
+    const res = await supabase
       .from('mensagens')
       .select('*')
-      .in('cliente_id', clienteIds)
+      .in('cliente_id', ids)
       .eq('usuario_id', userId)
-      .order('data_e_hora', { ascending: true });
+      .order(orderBy, { ascending: true });
 
-    if (mensagensError) {
-      // Se der erro por causa da coluna data_e_hora não existir, tentar com created_at
-      if (mensagensError.message.includes('data_e_hora') || mensagensError.code === '42703') {
-        const { data: mensagensRetry, error: errorRetry } = await supabase
+    if (res.error) {
+      if (res.error.code === '42703' && res.error.message?.includes('data_e_hora')) {
+        orderBy = 'created_at';
+        const retry = await supabase
           .from('mensagens')
           .select('*')
-          .in('cliente_id', clienteIds)
+          .in('cliente_id', ids)
           .eq('usuario_id', userId)
           .order('created_at', { ascending: true });
-        
-        if (!errorRetry) {
-          mensagensDiretas = mensagensRetry || [];
-        }
+        if (!retry.error) data = retry.data || [];
       }
     } else {
-      mensagensDiretas = mensagensData || [];
+      data = res.data || [];
     }
-  } catch (err) {
-    // Se a tabela não tiver cliente_id/usuario_id diretamente, continuar com busca via atendimentos
-    console.log('Tentando buscar mensagens diretamente falhou, tentando via atendimentos...');
+    if (data) todas.push(...data.map((r: any) => normalizarMensagem(r)));
   }
 
-  // Também buscar mensagens através dos atendimentos (caso a tabela tenha atendimento_id)
-  let mensagensViaAtendimentos: any[] = [];
-  
-  try {
-    const { data: atendimentos, error: atendimentosError } = await supabase
-      .from('atendimentos_solicitado')
-      .select('id')
-      .in('cliente_id', clienteIds)
-      .eq('usuario_id', userId);
-
-    if (!atendimentosError && atendimentos && atendimentos.length > 0) {
-      const atendimentoIds = atendimentos.map(a => a.id);
-
-      const { data: mensagensAtendimento, error: mensagensAtendimentoError } = await supabase
-        .from('mensagens')
-        .select('*')
-        .in('atendimento_id', atendimentoIds)
-        .order('data_e_hora', { ascending: true });
-
-      if (mensagensAtendimentoError) {
-        if (mensagensAtendimentoError.message.includes('data_e_hora') || mensagensAtendimentoError.code === '42703') {
-          const { data: mensagensRetry, error: errorRetry } = await supabase
-            .from('mensagens')
-            .select('*')
-            .in('atendimento_id', atendimentoIds)
-            .order('created_at', { ascending: true });
-          
-          if (!errorRetry) {
-            mensagensViaAtendimentos = mensagensRetry || [];
-          }
-        }
-      } else {
-        mensagensViaAtendimentos = mensagensAtendimento || [];
-      }
-    }
-  } catch (err) {
-    // Se não conseguir buscar via atendimentos, continuar apenas com mensagens diretas
-    console.log('Busca via atendimentos falhou, usando apenas mensagens diretas...');
-  }
-
-  // Combinar ambas as listas e remover duplicatas por ID
-  const todasMensagens = [...mensagensDiretas, ...mensagensViaAtendimentos];
-  const mensagensUnicas = Array.from(
-    new Map(todasMensagens.map(msg => [msg.id, msg])).values()
-  );
-
-  // Ordenar por data_e_hora ou created_at
+  const mensagensUnicas = Array.from(new Map(todas.map((msg) => [msg.id, msg])).values());
   return mensagensUnicas.sort((a, b) => {
     const dataA = a.data_e_hora || a.created_at || '';
     const dataB = b.data_e_hora || b.created_at || '';
@@ -150,40 +137,14 @@ export async function getMensagensByCliente(clienteId: string, userId?: string):
 }
 
 /**
- * Busca todas as mensagens de um atendimento
- * @param atendimentoId - ID do atendimento
+ * Busca todas as mensagens de um atendimento.
+ * A tabela mensagens não tem atendimento_id; busca por cliente_id do atendimento.
  */
 export async function getMensagensByAtendimento(atendimentoId: string): Promise<Mensagem[]> {
-  // Buscar todas as mensagens do atendimento
-  // Ordenar por data_e_hora se existir, senão usar created_at
-  const { data: mensagens, error: mensagensError } = await supabase
-    .from('mensagens')
-    .select('*')
-    .eq('atendimento_id', atendimentoId)
-    .order('data_e_hora', { ascending: true });
-
-  if (mensagensError) {
-    // Se der erro por causa da coluna data_e_hora não existir, tentar com created_at
-    if (mensagensError.message.includes('data_e_hora') || mensagensError.code === '42703') {
-      const { data: mensagensRetry, error: errorRetry } = await supabase
-        .from('mensagens')
-        .select('*')
-        .eq('atendimento_id', atendimentoId)
-        .order('created_at', { ascending: true });
-      
-      if (errorRetry) {
-        console.error('Error fetching mensagens by atendimento:', errorRetry);
-        throw errorRetry;
-      }
-      
-      return mensagensRetry || [];
-    }
-    
-    console.error('Error fetching mensagens by atendimento:', mensagensError);
-    throw mensagensError;
-  }
-
-  return mensagens || [];
+  const atendimento = await getAtendimentoById(atendimentoId);
+  if (!atendimento?.cliente_id || !atendimento?.usuario_id) return [];
+  const lista = await getMensagensByCliente(atendimento.cliente_id, atendimento.usuario_id);
+  return lista as unknown as Mensagem[];
 }
 
 /**
@@ -252,18 +213,29 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
 
   const clienteIds = todosClientesComTelefone.map(c => c.id);
 
-  // Buscar atendimentos de todos os clientes com os mesmos telefones
-  const { data: atendimentos, error: atendimentosError } = await supabase
-    .from('atendimentos_solicitado')
-    .select('id, cliente_id')
-    .in('cliente_id', clienteIds);
-
-  if (atendimentosError) {
-    console.error('Error fetching atendimentos:', atendimentosError);
-    throw atendimentosError;
+  // Buscar atendimentos em lotes para evitar URL longa (400)
+  const clienteIdsSet = new Set(clienteIds);
+  let atendimentosData: { id: string; cliente_id?: string }[] = [];
+  for (const ids of chunk(clienteIds, CHUNK_SIZE)) {
+    const res = await supabase
+      .from('atendimentos_solicitado')
+      .select('id, cliente_id')
+      .in('cliente_id', ids);
+    if (!res.error && res.data) {
+      atendimentosData.push(...(res.data as { id: string; cliente_id?: string }[]));
+    }
   }
-
-  const atendimentoIds = atendimentos?.map(a => a.id) || [];
+  if (atendimentosData.length === 0 && clienteIds.length > 0) {
+    const resAll = await supabase
+      .from('atendimentos_solicitado')
+      .select('id, cliente_id')
+      .eq('usuario_id', userId);
+    if (!resAll.error && resAll.data) {
+      atendimentosData = (resAll.data as { id: string; cliente_id?: string }[]).filter(
+        (a) => a.cliente_id && clienteIdsSet.has(a.cliente_id)
+      );
+    }
+  }
 
   // Criar mapa de cliente_id -> dados do cliente (priorizando o do usuário atual)
   const clientesMap = new Map<string, typeof todosClientesComTelefone[0]>();
@@ -295,97 +267,36 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
     });
   }
 
-  // Buscar mensagens de duas formas:
-  // 1. Diretamente da tabela mensagens por cliente_id e usuario_id
-  // 2. Através dos atendimentos (caso a tabela tenha atendimento_id)
+  // Tabela mensagens não tem atendimento_id — buscar apenas por cliente_id e usuario_id, em lotes
   let mensagens: any[] = [];
-
-  // 1. Buscar mensagens diretamente por cliente_id e usuario_id
+  let orderByMsg: 'data_e_hora' | 'created_at' = 'data_e_hora';
   try {
-    const { data: mensagensDiretas, error: errorDiretas } = await supabase
-      .from('mensagens')
-      .select('*')
-      .in('cliente_id', clienteIds)
-      .eq('usuario_id', userId)
-      .order('data_e_hora', { ascending: false })
-      .limit(5000);
-
-    if (errorDiretas) {
-      // Se der erro por causa da coluna data_e_hora não existir, tentar com created_at
-      if (errorDiretas.message.includes('data_e_hora') || errorDiretas.code === '42703') {
-        const { data: mensagensDiretas2, error: errorDiretas2 } = await supabase
-          .from('mensagens')
-          .select('*')
-          .in('cliente_id', clienteIds)
-          .eq('usuario_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(5000);
-        
-        if (!errorDiretas2) {
-          mensagens = mensagensDiretas2 || [];
+    for (const ids of chunk(clienteIds, CHUNK_SIZE)) {
+      const res = await supabase
+        .from('mensagens')
+        .select('*')
+        .in('cliente_id', ids)
+        .eq('usuario_id', userId)
+        .order(orderByMsg, { ascending: false })
+        .limit(5000);
+      if (res.error) {
+        if (res.error.code === '42703' && res.error.message?.includes('data_e_hora')) {
+          orderByMsg = 'created_at';
+          const retry = await supabase
+            .from('mensagens')
+            .select('*')
+            .in('cliente_id', ids)
+            .eq('usuario_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(5000);
+          if (!retry.error && retry.data) mensagens.push(...retry.data);
         }
-      } else {
-        // Se for outro erro (como coluna não existe), tentar via atendimentos
-        console.log('Busca direta de mensagens falhou:', errorDiretas.message);
+      } else if (res.data) {
+        mensagens.push(...res.data);
       }
-    } else {
-      mensagens = mensagensDiretas || [];
     }
   } catch (err) {
-    // Se não conseguir buscar diretamente, continuar com busca via atendimentos
-    console.log('Busca direta de mensagens falhou, tentando via atendimentos...', err);
-  }
-
-  // 2. Buscar mensagens através dos atendimentos (se houver atendimentos)
-  if (atendimentoIds.length > 0) {
-    try {
-      // Tentar primeiro com data_e_hora
-      const { data: mensagensAtendimento, error: errorAtendimento } = await supabase
-        .from('mensagens')
-        .select(`
-          *,
-          atendimentos_solicitado!inner (
-            cliente_id
-          )
-        `)
-        .in('atendimento_id', atendimentoIds)
-        .order('data_e_hora', { ascending: false })
-        .limit(5000);
-
-      if (errorAtendimento && (errorAtendimento.message.includes('data_e_hora') || errorAtendimento.code === '42703')) {
-        // Se data_e_hora não existe, tentar com created_at
-        const { data: mensagensAtendimento2, error: errorAtendimento2 } = await supabase
-          .from('mensagens')
-          .select(`
-            *,
-            atendimentos_solicitado!inner (
-              cliente_id
-            )
-          `)
-          .in('atendimento_id', atendimentoIds)
-          .order('created_at', { ascending: false })
-          .limit(5000);
-        
-        if (!errorAtendimento2) {
-          // Combinar com mensagens diretas e remover duplicatas
-          const todasMensagens = [...mensagens, ...(mensagensAtendimento2 || [])];
-          const mensagensUnicas = Array.from(
-            new Map(todasMensagens.map(msg => [msg.id, msg])).values()
-          );
-          mensagens = mensagensUnicas;
-        }
-      } else if (!errorAtendimento) {
-        // Combinar com mensagens diretas e remover duplicatas
-        const todasMensagens = [...mensagens, ...(mensagensAtendimento || [])];
-        const mensagensUnicas = Array.from(
-          new Map(todasMensagens.map(msg => [msg.id, msg])).values()
-        );
-        mensagens = mensagensUnicas;
-      }
-    } catch (err) {
-      // Se não conseguir buscar via atendimentos, usar apenas mensagens diretas
-      console.log('Busca via atendimentos falhou, usando apenas mensagens diretas...');
-    }
+    console.log('Busca de mensagens falhou:', err);
   }
 
   // Processar mensagens e atualizar conversas (mesmo que não haja atendimentos, se houver mensagens diretas)

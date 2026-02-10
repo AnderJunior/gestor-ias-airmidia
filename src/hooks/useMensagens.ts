@@ -1,25 +1,25 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { Mensagem } from '@/types/domain';
-import { getMensagensByAtendimento } from '@/lib/api/mensagens';
+import { MensagemConversa } from '@/lib/api/mensagens';
+import { getMensagensByCliente } from '@/lib/api/mensagens';
 import { supabase } from '@/lib/supabaseClient';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
-export function useMensagens(atendimentoId: string | null) {
-  const [mensagens, setMensagens] = useState<Mensagem[]>([]);
+export function useMensagens(clienteId: string | null, usuarioId?: string) {
+  const [mensagens, setMensagens] = useState<MensagemConversa[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
-    if (!atendimentoId) {
+    if (!clienteId) {
       setMensagens([]);
       setLoading(false);
       return;
     }
 
-    const currentAtendimentoId = atendimentoId; // Capturar valor para garantir tipo não-null
+    const currentClienteId = clienteId; // Capturar valor para garantir tipo não-null
     let isMounted = true;
 
     async function setupRealtime() {
@@ -27,7 +27,7 @@ export function useMensagens(atendimentoId: string | null) {
         setLoading(true);
         
         // Carregar mensagens iniciais
-        const data = await getMensagensByAtendimento(currentAtendimentoId);
+        const data = await getMensagensByCliente(currentClienteId, usuarioId);
         if (!isMounted) return;
         
         setMensagens(data);
@@ -40,21 +40,21 @@ export function useMensagens(atendimentoId: string | null) {
 
         // Criar subscription para mudanças na tabela mensagens
         const channel = supabase
-          .channel(`mensagens:${currentAtendimentoId}`)
+          .channel(`mensagens:${currentClienteId}`)
           .on(
             'postgres_changes',
             {
               event: '*', // Escutar INSERT, UPDATE, DELETE
               schema: 'public',
               table: 'mensagens',
-              filter: `atendimento_id=eq.${currentAtendimentoId}`,
+              filter: `cliente_id=eq.${currentClienteId}`,
             },
             async (payload) => {
               if (!isMounted) return;
 
               // Recarregar mensagens quando houver mudanças
               try {
-                const updatedData = await getMensagensByAtendimento(currentAtendimentoId);
+                const updatedData = await getMensagensByCliente(currentClienteId, usuarioId);
                 if (isMounted) {
                   setMensagens(updatedData);
                 }
@@ -76,7 +76,7 @@ export function useMensagens(atendimentoId: string | null) {
 
     setupRealtime();
 
-    // Cleanup: remover subscription quando o componente desmontar ou atendimentoId mudar
+    // Cleanup: remover subscription quando o componente desmontar ou clienteId mudar
     return () => {
       isMounted = false;
       if (channelRef.current) {
@@ -84,17 +84,17 @@ export function useMensagens(atendimentoId: string | null) {
         channelRef.current = null;
       }
     };
-  }, [atendimentoId]);
+  }, [clienteId, usuarioId]);
 
   return {
     mensagens,
     loading,
     error,
     refetch: async () => {
-      if (!atendimentoId) return;
+      if (!clienteId) return;
       setLoading(true);
       try {
-        const data = await getMensagensByAtendimento(atendimentoId);
+        const data = await getMensagensByCliente(clienteId, usuarioId);
         setMensagens(data);
       } catch (err) {
         setError(err instanceof Error ? err : new Error('Erro ao recarregar mensagens'));

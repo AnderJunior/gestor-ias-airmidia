@@ -496,21 +496,21 @@ export default function MensagensPage() {
     };
   }, []);
 
-  // Ler parâmetro de query cliente_id e abrir conversa automaticamente
+  // Ler parâmetro de query cliente_id e abrir conversa automaticamente (apenas na carga inicial)
   useEffect(() => {
     const clienteIdFromQuery = searchParams.get('cliente_id');
-    if (clienteIdFromQuery && !loadingClientes && clientes.length > 0) {
-      // Verificar se o cliente existe na lista
-      const clienteExiste = clientes.some(c => c.id === clienteIdFromQuery);
-      if (clienteExiste && clienteSelecionado !== clienteIdFromQuery) {
-        setClienteSelecionado(clienteIdFromQuery);
-        // Limpar o parâmetro da URL após abrir a conversa
-        const url = new URL(window.location.href);
-        url.searchParams.delete('cliente_id');
-        window.history.replaceState({}, '', url.toString());
-      }
-    }
-  }, [searchParams, loadingClientes, clientes, clienteSelecionado]);
+    if (!clienteIdFromQuery || loadingClientes || clientes.length === 0) return;
+    const clienteExiste = clientes.some(c => String(c.id) === String(clienteIdFromQuery));
+    if (!clienteExiste) return;
+    // Só aplicar o cliente da URL quando ainda não há ninguém selecionado (evita sobrescrever clique do usuário)
+    setClienteSelecionado((atual) => {
+      if (atual !== null && String(atual) !== String(clienteIdFromQuery)) return atual;
+      return clienteIdFromQuery;
+    });
+    const url = new URL(window.location.href);
+    url.searchParams.delete('cliente_id');
+    window.history.replaceState({}, '', url.toString());
+  }, [searchParams, loadingClientes, clientes]);
 
   // Scroll automático para o final quando uma conversa é aberta ou mensagens são carregadas
   // Este useEffect será movido para depois da definição de timelineItems
@@ -1376,14 +1376,13 @@ export default function MensagensPage() {
           ) : (
             <div className="divide-y divide-gray-100">
               {clientesFiltrados.map((cliente) => {
-                const isSelected = clienteSelecionado === cliente.id;
+                const isSelected = clienteSelecionado != null && String(clienteSelecionado) === String(cliente.id);
                 return (
                   <div
                     key={cliente.id}
-                    onClick={() => setClienteSelecionado(cliente.id)}
-                    className={`px-4 py-3 cursor-pointer transition-colors ${
-                      isSelected ? 'bg-gray-50' : 'hover:bg-gray-50'
-                    }`}
+                    onClick={() => setClienteSelecionado(String(cliente.id))}
+                    className={`px-4 py-3 cursor-pointer transition-colors`}
+                    style={isSelected ? { borderLeftWidth: 4, borderLeftStyle: 'solid', borderLeftColor: '#880BDB' } : undefined}
                   >
                     <div className="flex items-start gap-3">
                       {/* Avatar */}
