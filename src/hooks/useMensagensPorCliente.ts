@@ -40,7 +40,7 @@ export function useMensagensPorCliente(clienteId: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const realtimeDebounceRef = useRef<NodeJS.Timeout | number | null>(null);
 
   useEffect(() => {
     if (!clienteId || !user?.id) {
@@ -81,7 +81,7 @@ export function useMensagensPorCliente(clienteId: string | null) {
           const mensagemUsuarioId = (payload.new as any)?.usuario_id || (payload.old as any)?.usuario_id;
           if (mensagemUsuarioId && mensagemUsuarioId !== userId) return;
           if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
-          realtimeDebounceRef.current = setTimeout(() => {
+          realtimeDebounceRef.current = window.setTimeout(() => {
             realtimeDebounceRef.current = null;
             if (!isMounted) return;
             getMensagensByCliente(currentClienteId, userId)
@@ -152,7 +152,7 @@ export function useClientesComConversas() {
   const [clientes, setClientes] = useState<ClienteComConversa[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const listDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listDebounceRef = useRef<NodeJS.Timeout | number | null>(null);
 
   useEffect(() => {
     if (!user?.id) {
@@ -188,7 +188,7 @@ export function useClientesComConversas() {
 
     const scheduleUpdateList = (showLoading = false) => {
       if (listDebounceRef.current) clearTimeout(listDebounceRef.current);
-      listDebounceRef.current = setTimeout(() => {
+      listDebounceRef.current = window.setTimeout(() => {
         listDebounceRef.current = null;
         if (isMounted) updateList(showLoading);
       }, CLIENTES_LIST_DEBOUNCE_MS);
