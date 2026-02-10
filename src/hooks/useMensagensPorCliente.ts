@@ -40,7 +40,7 @@ export function useMensagensPorCliente(clienteId: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const realtimeDebounceRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!clienteId || !user?.id) {
@@ -152,7 +152,7 @@ export function useClientesComConversas() {
   const [clientes, setClientes] = useState<ClienteComConversa[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const listDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listDebounceRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!user?.id) {
