@@ -7,7 +7,7 @@ import { ROUTES } from '@/lib/constants';
 import { useNotifications } from '@/contexts/NotificationsContext';
 import { NotificationsModal } from '@/components/notifications/NotificationsModal';
 import { useAuth } from '@/hooks/useAuth';
-import { getAtendimentosRecentes } from '@/lib/api/atendimentos';
+import { getAtendimentosRecentes, clearAtendimentosRecentesCache } from '@/lib/api/atendimentos';
 
 const pageTitles: Record<string, string> = {
   [ROUTES.DASHBOARD]: 'Dashboard',
@@ -65,47 +65,27 @@ export function Topbar() {
 
     calculateUnreadAtendimentos();
 
-    // Atualizar a cada 30 segundos
-    const interval = setInterval(calculateUnreadAtendimentos, 30000);
+    const POLL_INTERVAL = 90000; // 90 segundos para reduzir requisições
+    const interval = setInterval(calculateUnreadAtendimentos, POLL_INTERVAL);
 
-    // Escutar mudanças no localStorage para atualizar quando notificações forem marcadas como lidas
     const handleStorageChange = () => {
       calculateUnreadAtendimentos();
     };
+
+    const handleMarkedAsRead = () => {
+      if (user?.id) clearAtendimentosRecentesCache(user.id);
+      calculateUnreadAtendimentos();
+    };
+
     window.addEventListener('storage', handleStorageChange);
-    
-    // Também escutar eventos customizados quando notificações são marcadas como lidas na mesma aba
-    window.addEventListener('atendimentoMarkedAsRead', handleStorageChange);
+    window.addEventListener('atendimentoMarkedAsRead', handleMarkedAsRead);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('atendimentoMarkedAsRead', handleStorageChange);
+      window.removeEventListener('atendimentoMarkedAsRead', handleMarkedAsRead);
     };
   }, [user?.id]);
-
-  // Atualizar contador quando o modal de notificações for fechado
-  useEffect(() => {
-    if (!isNotificationsOpen && user?.id) {
-      // Recalcular quando o modal fechar para atualizar o contador
-      const calculateUnreadAtendimentos = async () => {
-        try {
-          const atendimentos = await getAtendimentosRecentes(user.id);
-          const readAtendimentosIds = loadReadAtendimentosIds();
-          
-          const unreadCount = atendimentos.filter(
-            atendimento => !readAtendimentosIds.has(atendimento.id)
-          ).length;
-          
-          setUnreadAtendimentosCount(unreadCount);
-        } catch (error) {
-          console.error('Erro ao calcular atendimentos não lidos:', error);
-        }
-      };
-      
-      calculateUnreadAtendimentos();
-    }
-  }, [isNotificationsOpen, user?.id]);
 
   // Calcular total de notificações não lidas
   const totalUnreadCount = unreadCount + unreadAtendimentosCount;

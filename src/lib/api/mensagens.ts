@@ -5,7 +5,7 @@ import { Mensagem } from '@/types/domain';
 import { getAtendimentoById } from './atendimentos';
 
 /** Tamanho máximo de IDs por requisição para evitar URL longa e 400 Bad Request */
-const CHUNK_SIZE = 40;
+const CHUNK_SIZE = 80;
 
 function chunk<T>(arr: T[], size: number): T[][] {
   const chunks: T[][] = [];
@@ -97,35 +97,41 @@ export async function getMensagensByCliente(clienteId: string, userId?: string):
     };
   }
 
-  // Tabela mensagens não tem coluna atendimento_id — buscar apenas por cliente_id e usuario_id, em lotes para evitar URL longa (400)
+  // Buscar em lotes e em paralelo para não demorar minutos
   const chunksIds = chunk(clienteIds, CHUNK_SIZE);
-  const todas: any[] = [];
-  let orderBy: 'data_e_hora' | 'created_at' = 'data_e_hora';
-
-  for (const ids of chunksIds) {
-    let data: any[] | null = null;
-    const res = await supabase
+  const promises = chunksIds.map((ids) =>
+    supabase
       .from('mensagens')
       .select('*')
       .in('cliente_id', ids)
       .eq('usuario_id', userId)
-      .order(orderBy, { ascending: true });
-
-    if (res.error) {
-      if (res.error.code === '42703' && res.error.message?.includes('data_e_hora')) {
-        orderBy = 'created_at';
-        const retry = await supabase
+      .order('data_e_hora', { ascending: true })
+  );
+  const results = await Promise.all(promises);
+  const todas: any[] = [];
+  const chunksComErroDataHora: string[][] = [];
+  for (let i = 0; i < results.length; i++) {
+    const res = results[i];
+    if (res.error && res.error.code === '42703' && res.error.message?.includes('data_e_hora')) {
+      chunksComErroDataHora.push(chunksIds[i]);
+    } else if (!res.error && res.data) {
+      todas.push(...res.data.map((r: any) => normalizarMensagem(r)));
+    }
+  }
+  if (chunksComErroDataHora.length > 0) {
+    const retries = await Promise.all(
+      chunksComErroDataHora.map((ids) =>
+        supabase
           .from('mensagens')
           .select('*')
           .in('cliente_id', ids)
           .eq('usuario_id', userId)
-          .order('created_at', { ascending: true });
-        if (!retry.error) data = retry.data || [];
-      }
-    } else {
-      data = res.data || [];
+          .order('created_at', { ascending: true })
+      )
+    );
+    for (const r of retries) {
+      if (!r.error && r.data) todas.push(...r.data.map((row: any) => normalizarMensagem(row)));
     }
-    if (data) todas.push(...data.map((r: any) => normalizarMensagem(r)));
   }
 
   const mensagensUnicas = Array.from(new Map(todas.map((msg) => [msg.id, msg])).values());
@@ -213,14 +219,15 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
 
   const clienteIds = todosClientesComTelefone.map(c => c.id);
 
-  // Buscar atendimentos em lotes para evitar URL longa (400)
+  // Buscar atendimentos em lotes e em paralelo
   const clienteIdsSet = new Set(clienteIds);
+  const atendChunks = chunk(clienteIds, CHUNK_SIZE);
+  const atendPromises = atendChunks.map((ids) =>
+    supabase.from('atendimentos_solicitado').select('id, cliente_id').in('cliente_id', ids)
+  );
+  const atendResults = await Promise.all(atendPromises);
   let atendimentosData: { id: string; cliente_id?: string }[] = [];
-  for (const ids of chunk(clienteIds, CHUNK_SIZE)) {
-    const res = await supabase
-      .from('atendimentos_solicitado')
-      .select('id, cliente_id')
-      .in('cliente_id', ids);
+  for (const res of atendResults) {
     if (!res.error && res.data) {
       atendimentosData.push(...(res.data as { id: string; cliente_id?: string }[]));
     }
@@ -267,32 +274,43 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
     });
   }
 
-  // Tabela mensagens não tem atendimento_id — buscar apenas por cliente_id e usuario_id, em lotes
+  // Mensagens em lotes e em paralelo para carregar rápido
   let mensagens: any[] = [];
-  let orderByMsg: 'data_e_hora' | 'created_at' = 'data_e_hora';
+  const msgChunks = chunk(clienteIds, CHUNK_SIZE);
   try {
-    for (const ids of chunk(clienteIds, CHUNK_SIZE)) {
-      const res = await supabase
+    const msgPromises = msgChunks.map((ids) =>
+      supabase
         .from('mensagens')
         .select('*')
         .in('cliente_id', ids)
         .eq('usuario_id', userId)
-        .order(orderByMsg, { ascending: false })
-        .limit(5000);
-      if (res.error) {
-        if (res.error.code === '42703' && res.error.message?.includes('data_e_hora')) {
-          orderByMsg = 'created_at';
-          const retry = await supabase
+        .order('data_e_hora', { ascending: false })
+        .limit(5000)
+    );
+    const msgResults = await Promise.all(msgPromises);
+    const chunksRetry: string[][] = [];
+    for (let i = 0; i < msgResults.length; i++) {
+      const res = msgResults[i];
+      if (res.error && res.error.code === '42703' && res.error.message?.includes('data_e_hora')) {
+        chunksRetry.push(msgChunks[i]);
+      } else if (res.data) {
+        mensagens.push(...res.data);
+      }
+    }
+    if (chunksRetry.length > 0) {
+      const retries = await Promise.all(
+        chunksRetry.map((ids) =>
+          supabase
             .from('mensagens')
             .select('*')
             .in('cliente_id', ids)
             .eq('usuario_id', userId)
             .order('created_at', { ascending: false })
-            .limit(5000);
-          if (!retry.error && retry.data) mensagens.push(...retry.data);
-        }
-      } else if (res.data) {
-        mensagens.push(...res.data);
+            .limit(5000)
+        )
+      );
+      for (const r of retries) {
+        if (r.data) mensagens.push(...r.data);
       }
     }
   } catch (err) {

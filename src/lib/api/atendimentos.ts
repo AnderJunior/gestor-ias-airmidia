@@ -3,6 +3,22 @@ import { Atendimento, DashboardStats, StatusAtendimento } from '@/types/domain';
 import { getConnectedInstances } from './whatsapp';
 import { triggerWebhookCriarCliente } from './webhookTrigger';
 
+const ATENDIMENTOS_RECENTES_CACHE_TTL = 45 * 1000;
+const atendimentosRecentesCache = new Map<string, { data: Atendimento[]; timestamp: number }>();
+const atendimentosRecentesInFlight = new Map<string, Promise<Atendimento[]>>();
+
+export function clearAtendimentosRecentesCache(userId?: string) {
+  if (userId) {
+    for (const key of atendimentosRecentesCache.keys()) {
+      if (key.startsWith(`${userId}:`)) {
+        atendimentosRecentesCache.delete(key);
+      }
+    }
+  } else {
+    atendimentosRecentesCache.clear();
+  }
+}
+
 /**
  * Busca atendimentos do usuário logado (baseado nos telefones conectados)
  * @param userId - ID do usuário (opcional, se não fornecido busca do auth)
@@ -551,55 +567,82 @@ export async function getDashboardStats(userId?: string): Promise<DashboardStats
  * @param limit - Número de atendimentos a retornar (padrão: 5)
  */
 export async function getAtendimentosRecentes(userId?: string, limit: number = 5): Promise<Atendimento[]> {
-  // Buscar instâncias conectadas do usuário
-  const connectedInstances = await getConnectedInstances(userId);
-  const instanceIds = connectedInstances.map(inst => inst.id);
-
-  if (instanceIds.length === 0) {
-    return [];
+  let finalUserId = userId;
+  if (!finalUserId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+    finalUserId = user.id;
   }
 
-  // Buscar atendimentos ordenados por created_at (mais recentes primeiro)
-  const { data: atendimentos, error } = await supabase
-    .from('atendimentos_solicitado')
-    .select(`
-      *,
-      clientes (
-        nome,
-        telefone,
-        foto_perfil
-      ),
-      whatsapp_instances (
-        telefone
-      )
-    `)
-    .in('whatsapp_instance_id', instanceIds)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error('Error fetching atendimentos recentes:', error);
-    throw error;
+  const cacheKey = `${finalUserId}:${limit}`;
+  const cached = atendimentosRecentesCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < ATENDIMENTOS_RECENTES_CACHE_TTL) {
+    return cached.data;
   }
 
-  if (!atendimentos || atendimentos.length === 0) {
-    return [];
-  }
+  const inFlight = atendimentosRecentesInFlight.get(cacheKey);
+  if (inFlight) return inFlight;
 
-  // Mapear para o tipo Atendimento
-  return atendimentos.map((atendimento: any) => ({
-    id: atendimento.id,
-    cliente_id: atendimento.cliente_id,
-    cliente_nome: atendimento.clientes?.nome,
-    cliente_foto_perfil: atendimento.clientes?.foto_perfil || undefined,
-    telefone_cliente: atendimento.clientes?.telefone || '',
-    telefone_usuario: atendimento.whatsapp_instances?.telefone || '',
-    usuario_id: atendimento.usuario_id,
-    status: (atendimento.status || 'aberto') as StatusAtendimento,
-    created_at: atendimento.created_at,
-    updated_at: atendimento.updated_at,
-    resumo_conversa: atendimento.resumo_conversa || undefined,
-  }));
+  const request = (async (): Promise<Atendimento[]> => {
+    const connectedInstances = await getConnectedInstances(finalUserId);
+    const instanceIds = connectedInstances.map(inst => inst.id);
+
+    if (instanceIds.length === 0) {
+      atendimentosRecentesCache.set(cacheKey, { data: [], timestamp: Date.now() });
+      return [];
+    }
+
+    const { data: atendimentos, error } = await supabase
+      .from('atendimentos_solicitado')
+      .select(`
+        *,
+        clientes (
+          nome,
+          telefone,
+          foto_perfil
+        ),
+        whatsapp_instances (
+          telefone
+        )
+      `)
+      .in('whatsapp_instance_id', instanceIds)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Error fetching atendimentos recentes:', error);
+      throw error;
+    }
+
+    if (!atendimentos || atendimentos.length === 0) {
+      atendimentosRecentesCache.set(cacheKey, { data: [], timestamp: Date.now() });
+      return [];
+    }
+
+    const result = atendimentos.map((atendimento: any) => ({
+      id: atendimento.id,
+      cliente_id: atendimento.cliente_id,
+      cliente_nome: atendimento.clientes?.nome,
+      cliente_foto_perfil: atendimento.clientes?.foto_perfil || undefined,
+      telefone_cliente: atendimento.clientes?.telefone || '',
+      telefone_usuario: atendimento.whatsapp_instances?.telefone || '',
+      usuario_id: atendimento.usuario_id,
+      status: (atendimento.status || 'aberto') as StatusAtendimento,
+      created_at: atendimento.created_at,
+      updated_at: atendimento.updated_at,
+      resumo_conversa: atendimento.resumo_conversa || undefined,
+    }));
+
+    atendimentosRecentesCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    return result;
+  })();
+
+  atendimentosRecentesInFlight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    atendimentosRecentesInFlight.delete(cacheKey);
+  }
 }
 
 /**

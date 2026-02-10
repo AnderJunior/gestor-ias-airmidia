@@ -79,73 +79,56 @@ export function VerificacaoConexaoWhatsApp() {
 
     let isMounted = true;
     let lastCheckTime = 0;
-    const CHECK_INTERVAL = 60000; // 1 minuto entre verificações
+    let lastKnownState: string | null = null;
+    const CHECK_INTERVAL = 120000; // 2 minutos entre verificações para reduzir requisições
 
     const verificarStatus = async () => {
-      // Evitar múltiplas verificações simultâneas
       const now = Date.now();
-      if (now - lastCheckTime < CHECK_INTERVAL) {
-        return;
-      }
+      if (now - lastCheckTime < CHECK_INTERVAL) return;
       lastCheckTime = now;
 
       try {
-        // Verificar status na Evolution API usando connectionState
         const state = await verificarConnectionState(finalInstanceName);
-        
         if (!isMounted) return;
 
-        // Se o status não for "open", atualizar Supabase
+        const stateChanged = lastKnownState !== state;
+        lastKnownState = state;
+
         if (state !== 'open') {
           let statusSupabase: 'conectado' | 'desconectado' | 'conectando' | 'erro' = 'desconectado';
-          
-          if (state === 'connecting') {
-            statusSupabase = 'conectando';
-          } else if (state === 'close') {
-            statusSupabase = 'desconectado';
-          } else if (state === null) {
-            // Instância não existe na Evolution API
-            statusSupabase = 'desconectado';
-            console.log(`Instância ${instanceName} não encontrada na Evolution API`);
-          } else {
-            statusSupabase = 'desconectado';
-          }
+          if (state === 'connecting') statusSupabase = 'conectando';
+          else if (state === 'close' || state === null) statusSupabase = 'desconectado';
+          else statusSupabase = 'desconectado';
 
-          // Atualizar Supabase
-          try {
-            await sincronizarStatusInstancia(finalInstanceName, telefoneUsuario, statusSupabase, user.id);
-            console.log(`Status atualizado no Supabase: ${statusSupabase} (Evolution retornou: ${state})`);
-          } catch (syncError) {
-            console.error('Erro ao sincronizar status com Supabase:', syncError);
+          if (stateChanged) {
+            try {
+              await sincronizarStatusInstancia(finalInstanceName, telefoneUsuario, statusSupabase, user.id);
+            } catch (syncError) {
+              console.error('Erro ao sincronizar status com Supabase:', syncError);
+            }
           }
-
-          // Mostrar notificação se não estiver conectado (incluindo quando instância não existe)
           setMostrarNotificacao(true);
         } else {
-          // Se estiver "open", atualizar Supabase como conectado e esconder notificação
-          try {
-            await sincronizarStatusInstancia(finalInstanceName, telefoneUsuario, 'conectado', user.id);
-            setMostrarNotificacao(false);
-            setMostrarModal(false);
-          } catch (syncError) {
-            console.error('Erro ao sincronizar status conectado com Supabase:', syncError);
+          if (stateChanged) {
+            try {
+              await sincronizarStatusInstancia(finalInstanceName, telefoneUsuario, 'conectado', user.id);
+            } catch (syncError) {
+              console.error('Erro ao sincronizar status conectado com Supabase:', syncError);
+            }
           }
+          setMostrarNotificacao(false);
+          setMostrarModal(false);
         }
       } catch (error) {
         console.error('Erro ao verificar status na Evolution API:', error);
-        // Em caso de erro, mostrar notificação para que o usuário possa tentar conectar
         setMostrarNotificacao(true);
       }
     };
 
-    // Verificar imediatamente ao carregar
     verificarStatus();
 
-    // Verificar a cada 1 minuto (consolidado de 30s e 5min para evitar duplicações)
     const interval = setInterval(() => {
-      if (!mostrarModal && isMounted) {
-        verificarStatus();
-      }
+      if (!mostrarModal && isMounted) verificarStatus();
     }, CHECK_INTERVAL);
 
     return () => {

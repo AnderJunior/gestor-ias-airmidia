@@ -6,12 +6,41 @@ import { supabase } from '@/lib/supabaseClient';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useAuth } from '@/hooks/useAuth';
 
+const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutos
+const REALTIME_REFETCH_DEBOUNCE_MS = 800;
+const CLIENTES_LIST_DEBOUNCE_MS = 1200;
+
+const mensagensCache = new Map<string, { data: MensagemConversa[]; ts: number }>();
+const clientesCache = new Map<string, { data: ClienteComConversa[]; ts: number }>();
+
+function getCachedMensagens(userId: string, clienteId: string): MensagemConversa[] | null {
+  const key = `${userId}:${clienteId}`;
+  const entry = mensagensCache.get(key);
+  if (!entry || Date.now() - entry.ts > CACHE_TTL_MS) return null;
+  return entry.data;
+}
+
+function setCachedMensagens(userId: string, clienteId: string, data: MensagemConversa[]) {
+  mensagensCache.set(`${userId}:${clienteId}`, { data, ts: Date.now() });
+}
+
+function getCachedClientes(userId: string): ClienteComConversa[] | null {
+  const entry = clientesCache.get(userId);
+  if (!entry || Date.now() - entry.ts > CACHE_TTL_MS) return null;
+  return entry.data;
+}
+
+function setCachedClientes(userId: string, data: ClienteComConversa[]) {
+  clientesCache.set(userId, { data, ts: Date.now() });
+}
+
 export function useMensagensPorCliente(clienteId: string | null) {
   const { user } = useAuth();
   const [mensagens, setMensagens] = useState<MensagemConversa[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!clienteId || !user?.id) {
@@ -20,79 +49,82 @@ export function useMensagensPorCliente(clienteId: string | null) {
       return;
     }
 
-    const currentClienteId = clienteId; // Capturar valor para garantir tipo não-null
-    const userId = user.id; // Capturar valor para garantir tipo não-null
+    const currentClienteId = clienteId;
+    const userId = user.id;
     let isMounted = true;
 
-    async function setupRealtime() {
-      try {
-        setLoading(true);
-        
-        // Carregar mensagens iniciais
-        const data = await getMensagensByCliente(currentClienteId, userId);
-        if (!isMounted) return;
-        
-        setMensagens(data);
-        setLoading(false);
+    const cached = getCachedMensagens(userId, currentClienteId);
+    if (cached?.length !== undefined) {
+      setMensagens(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
 
-        // Limpar subscription anterior se existir
-        if (channelRef.current) {
-          await supabase.removeChannel(channelRef.current);
-        }
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
 
-        // Criar subscription para mudanças na tabela mensagens
-        // Filtrar apenas mensagens deste cliente e usuário para reduzir requisições
-        const channel = supabase
-          .channel(`mensagens-cliente:${currentClienteId}:${userId}`)
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'mensagens',
-              filter: `cliente_id=eq.${currentClienteId}`,
-            },
-            async (payload) => {
-              if (!isMounted) return;
-
-              // Verificar se a mensagem é do usuário atual antes de recarregar
-              const mensagemUsuarioId = (payload.new as any)?.usuario_id || (payload.old as any)?.usuario_id;
-              if (mensagemUsuarioId && mensagemUsuarioId !== userId) {
-                return; // Ignorar mensagens de outros usuários
-              }
-
-              // Recarregar mensagens quando houver mudanças relevantes
-              try {
-                const updatedData = await getMensagensByCliente(currentClienteId, userId);
+    const channel = supabase
+      .channel(`mensagens-cliente:${currentClienteId}:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'mensagens',
+          filter: `cliente_id=eq.${currentClienteId}`,
+        },
+        (payload) => {
+          if (!isMounted) return;
+          const mensagemUsuarioId = (payload.new as any)?.usuario_id || (payload.old as any)?.usuario_id;
+          if (mensagemUsuarioId && mensagemUsuarioId !== userId) return;
+          if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
+          realtimeDebounceRef.current = window.setTimeout(() => {
+            realtimeDebounceRef.current = null;
+            if (!isMounted) return;
+            getMensagensByCliente(currentClienteId, userId)
+              .then((updatedData) => {
                 if (isMounted) {
                   setMensagens(updatedData);
+                  setCachedMensagens(userId, currentClienteId, updatedData);
                 }
-              } catch (err) {
-                console.error('Erro ao atualizar mensagens via realtime:', err);
-              }
-            }
-          )
-          .subscribe();
+              })
+              .catch((err) => console.error('Erro ao atualizar mensagens via realtime:', err));
+          }, REALTIME_REFETCH_DEBOUNCE_MS);
+        }
+      )
+      .subscribe();
+    channelRef.current = channel;
 
-        channelRef.current = channel;
+    (async () => {
+      try {
+        const data = await getMensagensByCliente(currentClienteId, userId);
+        if (!isMounted) return;
+        setMensagens(data);
+        setLoading(false);
+        setCachedMensagens(userId, currentClienteId, data);
       } catch (err) {
         if (isMounted) {
           setError(err instanceof Error ? err : new Error('Erro ao carregar mensagens'));
           setLoading(false);
         }
       }
-    }
+    })();
 
-    setupRealtime();
-
-    // Cleanup
     return () => {
       isMounted = false;
+      if (realtimeDebounceRef.current) {
+        clearTimeout(realtimeDebounceRef.current);
+        realtimeDebounceRef.current = null;
+      }
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
     };
-  }, [clienteId, user]);
+  }, [clienteId, user?.id]);
 
   return {
     mensagens,
@@ -100,12 +132,12 @@ export function useMensagensPorCliente(clienteId: string | null) {
     error,
     refetch: async () => {
       if (!clienteId || !user?.id) return;
-      const currentClienteId = clienteId; // Capturar valor para garantir tipo não-null
-      const userId = user.id; // Capturar valor para garantir tipo não-null
+      mensagensCache.delete(`${user.id}:${clienteId}`);
       setLoading(true);
       try {
-        const data = await getMensagensByCliente(currentClienteId, userId);
+        const data = await getMensagensByCliente(clienteId, user.id);
         setMensagens(data);
+        setCachedMensagens(user.id, clienteId, data);
       } catch (err) {
         setError(err instanceof Error ? err : new Error('Erro ao recarregar mensagens'));
       } finally {
@@ -120,6 +152,7 @@ export function useClientesComConversas() {
   const [clientes, setClientes] = useState<ClienteComConversa[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const listDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!user?.id) {
@@ -128,29 +161,45 @@ export function useClientesComConversas() {
       return;
     }
 
-    const userId = user.id; // Capturar valor para garantir tipo não-null
+    const userId = user.id;
     let isMounted = true;
 
-    async function loadClientes() {
+    const cached = getCachedClientes(userId);
+    if (cached?.length !== undefined) {
+      setClientes(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    const updateList = async (showLoading = false) => {
+      if (showLoading && isMounted) setLoading(true);
       try {
-        setLoading(true);
         const data = await getClientesComConversas(userId);
         if (isMounted) {
           setClientes(data);
-          setLoading(false);
+          setCachedClientes(userId, data);
         }
       } catch (err) {
-        if (isMounted) {
-          setError(err instanceof Error ? err : new Error('Erro ao carregar clientes'));
-          setLoading(false);
-        }
+        if (isMounted) setError(err instanceof Error ? err : new Error('Erro ao carregar clientes'));
       }
+      if (isMounted) setLoading(false);
+    };
+
+    const scheduleUpdateList = (showLoading = false) => {
+      if (listDebounceRef.current) clearTimeout(listDebounceRef.current);
+      listDebounceRef.current = window.setTimeout(() => {
+        listDebounceRef.current = null;
+        if (isMounted) updateList(showLoading);
+      }, CLIENTES_LIST_DEBOUNCE_MS);
+    };
+
+    if (!cached) {
+      updateList(true);
+    } else {
+      updateList(false);
     }
 
-    loadClientes();
-
-    // Escutar mudanças em atendimentos e mensagens para atualizar a lista
-    // Filtrar apenas mudanças do usuário atual para reduzir requisições
     const atendimentosChannel = supabase
       .channel(`atendimentos-updates:${userId}`)
       .on(
@@ -161,15 +210,8 @@ export function useClientesComConversas() {
           table: 'atendimentos_solicitado',
           filter: `usuario_id=eq.${userId}`,
         },
-        async () => {
-          if (isMounted) {
-            try {
-              const data = await getClientesComConversas(userId);
-              setClientes(data);
-            } catch (err) {
-              console.error('Erro ao atualizar lista de clientes:', err);
-            }
-          }
+        () => {
+          if (isMounted) scheduleUpdateList(false);
         }
       )
       .subscribe();
@@ -184,25 +226,22 @@ export function useClientesComConversas() {
           table: 'mensagens',
           filter: `usuario_id=eq.${userId}`,
         },
-        async () => {
-          if (isMounted) {
-            try {
-              const data = await getClientesComConversas(userId);
-              setClientes(data);
-            } catch (err) {
-              console.error('Erro ao atualizar lista de clientes:', err);
-            }
-          }
+        () => {
+          if (isMounted) scheduleUpdateList(false);
         }
       )
       .subscribe();
 
     return () => {
       isMounted = false;
+      if (listDebounceRef.current) {
+        clearTimeout(listDebounceRef.current);
+        listDebounceRef.current = null;
+      }
       supabase.removeChannel(atendimentosChannel);
       supabase.removeChannel(mensagensChannel);
     };
-  }, [user]);
+  }, [user?.id]);
 
   return {
     clientes,
@@ -210,10 +249,12 @@ export function useClientesComConversas() {
     error,
     refetch: async () => {
       if (!user) return;
+      clientesCache.delete(user.id);
       setLoading(true);
       try {
         const data = await getClientesComConversas(user.id);
         setClientes(data);
+        setCachedClientes(user.id, data);
       } catch (err) {
         setError(err instanceof Error ? err : new Error('Erro ao recarregar clientes'));
       } finally {
