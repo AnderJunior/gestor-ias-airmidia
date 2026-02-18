@@ -10,7 +10,10 @@ import {
   Users,
   TestTube,
   Rocket,
-  Shield
+  Shield,
+  Bot,
+  Clock,
+  UserCircle
 } from 'lucide-react';
 import React from 'react';
 
@@ -67,5 +70,17 @@ export function RocketIcon({ className = 'w-5 h-5', strokeWidth = 2, size, color
 
 export function ShieldIcon({ className = 'w-5 h-5', strokeWidth = 2, size, color }: IconProps) {
   return <Shield className={className} strokeWidth={strokeWidth} size={size} color={color} />;
+}
+
+export function BotIcon({ className = 'w-5 h-5', strokeWidth = 2, size, color }: IconProps) {
+  return <Bot className={className} strokeWidth={strokeWidth} size={size} color={color} />;
+}
+
+export function ClockIcon({ className = 'w-5 h-5', strokeWidth = 2, size, color }: IconProps) {
+  return <Clock className={className} strokeWidth={strokeWidth} size={size} color={color} />;
+}
+
+export function UserCircleIcon({ className = 'w-5 h-5', strokeWidth = 2, size, color }: IconProps) {
+  return <UserCircle className={className} strokeWidth={strokeWidth} size={size} color={color} />;
 }
 

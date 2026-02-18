@@ -2,24 +2,22 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { getUsuario } from '@/lib/api/usuarios';
+import { getUsuario, getHistoricoFaseCliente, HistoricoFaseItem } from '@/lib/api/usuarios';
 import { getWhatsAppInstances } from '@/lib/api/whatsapp';
 import { Usuario } from '@/lib/api/usuarios';
 import { WhatsAppInstance } from '@/types/domain';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
-import { ArrowLeft, Trash2, Edit, Phone, Mail, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Play, Pause, Mic, File, Image as ImageIcon, Download, ZoomIn, ZoomOut, Link2, Send, Smile, Check, CheckSquare, Square, UserPlus, Bot, User } from 'lucide-react';
+import { ArrowLeft, Trash2, Edit, Phone, Mail, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Play, Pause, Mic, File, Image as ImageIcon, Download, Check, CheckSquare, Square, UserPlus } from 'lucide-react';
 import { ROUTES } from '@/lib/constants';
 import { ClienteActionsMenu } from '@/components/admin/ClienteActionsMenu';
 import { EditarClienteModal } from '@/components/admin/EditarClienteModal';
 import { EditarNomeInstanciaModal } from '@/components/admin/EditarNomeInstanciaModal';
 import { supabase } from '@/lib/supabaseClient';
 import { fetchKanbanColunas } from '@/lib/api/kanbanColunas';
-import { useMensagensPorCliente } from '@/hooks/useMensagensPorCliente';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { filterWhatsAppUrl } from '@/lib/utils/images';
-import { MensagemConversa } from '@/lib/api/mensagens';
 import { useTarefas } from '@/hooks/useTarefas';
 import { Tarefa } from '@/lib/api/tarefas';
 import { SelecionarResponsavelPopover } from '@/components/tarefas/SelecionarResponsavelPopover';
@@ -1106,18 +1104,8 @@ export default function ClienteDetailPage() {
   const [deactivating, setDeactivating] = useState(false);
   const [instanciaSelecionada, setInstanciaSelecionada] = useState<WhatsAppInstance | null>(null);
   const [kanbanColumns, setKanbanColumns] = useState<Array<{ id: string; name: string; color?: string }>>([]);
-  const { mensagens, loading: loadingMensagens } = useMensagensPorCliente(clienteId);
-  const mensagensContainerRef = useRef<HTMLDivElement>(null);
-  const [imagemModal, setImagemModal] = useState<{
-    src: string;
-    remetente: string;
-    dataHora: string;
-  } | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [comentario, setComentario] = useState('');
+  const [historicoFase, setHistoricoFase] = useState<HistoricoFaseItem[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadCliente() {
@@ -1148,6 +1136,14 @@ export default function ClienteDetailPage() {
           statusEvolution,
           instancias,
         });
+
+        // Carregar histórico de mudanças de etapa
+        const historico = await getHistoricoFaseCliente(clienteId);
+        setHistoricoFase(historico);
+
+        // Usuário atual para exibir "(você)" nos registros
+        const { data: { user } } = await supabase.auth.getUser();
+        setCurrentUserId(user?.id ?? null);
       } catch (error) {
         console.error('Erro ao carregar cliente:', error);
         router.push(ROUTES.ADMIN_CLIENTES);
@@ -1278,35 +1274,15 @@ export default function ClienteDetailPage() {
     return colors[Math.abs(hash) % colors.length];
   };
 
-  // Formatar data e hora da mensagem
-  const formatarDataHora = (data: string | undefined) => {
+  // Formatar data do histórico (ex: "out 23 2025 às 15:42")
+  const formatarDataHistorico = (data: string | undefined) => {
     if (!data) return '';
     try {
-      const hoje = new Date();
-      const dataMsg = new Date(data);
-      
-      const hojeSemHora = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
-      const dataMsgSemHora = new Date(dataMsg.getFullYear(), dataMsg.getMonth(), dataMsg.getDate());
-      
-      const diffTime = hojeSemHora.getTime() - dataMsgSemHora.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-      if (diffDays === 0) {
-        return format(dataMsg, 'HH:mm', { locale: ptBR });
-      } else {
-        return format(dataMsg, 'dd/MM/yyyy HH:mm', { locale: ptBR });
-      }
+      return format(new Date(data), "MMM d yyyy 'às' HH:mm", { locale: ptBR });
     } catch {
       return '';
     }
   };
-
-  // Scroll automático para a última mensagem
-  useEffect(() => {
-    if (mensagensContainerRef.current && mensagens.length > 0) {
-      mensagensContainerRef.current.scrollTop = mensagensContainerRef.current.scrollHeight;
-    }
-  }, [mensagens]);
 
   const handleEditInstance = () => {
     const instancia = cliente?.instancias && cliente.instancias.length > 0 
@@ -1341,6 +1317,10 @@ export default function ClienteDetailPage() {
         statusEvolution,
         instancias,
       });
+
+      // Recarregar histórico de etapas (pode ter mudado)
+      const historico = await getHistoricoFaseCliente(clienteId);
+      setHistoricoFase(historico);
     } catch (error) {
       console.error('Erro ao recarregar cliente:', error);
     }
@@ -1415,34 +1395,6 @@ export default function ClienteDetailPage() {
   if (!cliente) {
     return null;
   }
-
-  // Detectar formato do áudio
-  const detectarFormatoAudio = (base64: string | null): string => {
-    if (!base64 || typeof base64 !== 'string') return 'audio/ogg; codecs=opus';
-    
-    try {
-      const binaryString = atob(base64.substring(0, 20));
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      
-      if (bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
-        return 'audio/ogg; codecs=opus';
-      }
-      if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
-        return 'audio/wav';
-      }
-      if ((bytes[0] === 0xFF && (bytes[1] === 0xFB || bytes[1] === 0xF3)) ||
-          (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33)) {
-        return 'audio/mpeg';
-      }
-    } catch (e) {
-      console.warn('Erro ao detectar formato de áudio:', e);
-    }
-    
-    return 'audio/ogg; codecs=opus';
-  };
 
   const statusConexao = formatarStatusConexao(cliente.statusEvolution);
   const StatusIcon = statusConexao.icon;
@@ -1607,291 +1559,80 @@ export default function ClienteDetailPage() {
         </div>
       </div>
 
-      {/* Chat Flutuante - Fixo na Direita */}
+      {/* Painel de Atualizações - Fixo na Direita */}
       <div className="fixed right-0 top-[96px] bottom-0 w-[380px] flex flex-col bg-white border-l border-gray-200 overflow-hidden z-40">
-        {/* Área de Mensagens */}
+        {/* Área de Atualizações */}
         <div className="flex-1 flex flex-col min-h-0 relative bg-white">
-          <div 
-            ref={mensagensContainerRef}
-            className="flex-1 overflow-y-auto px-6 py-4 space-y-4 scrollbar-hide"
-          >
-                {loadingMensagens ? (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-                  </div>
-                ) : mensagens.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-gray-500">
-                    Nenhuma mensagem ainda
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 scrollbar-hide">
+                {/* Histórico de mudanças de etapa */}
+                {historicoFase.length > 0 ? (
+                  <div className="space-y-3 mb-4 pb-4">
+                    {historicoFase.map((item) => {
+                      const colunaAtual = kanbanColumns.find((c) => c.id === item.fase_id);
+                      const colunaAnterior = item.fase_anterior_id
+                        ? kanbanColumns.find((c) => c.id === item.fase_anterior_id)
+                        : null;
+                      const nomeAtual = colunaAtual?.name ?? item.fase_id;
+                      const nomeAnterior = colunaAnterior?.name ?? item.fase_anterior_id;
+                      const corAtual = colunaAtual?.color ?? '#6b7280';
+                      const corAnterior = colunaAnterior?.color ?? '#6b7280';
+                      const ehVoce = item.alterado_por === currentUserId;
+                      const labelAutor = item.alterado_por_nome
+                        ? `${item.alterado_por_nome}${ehVoce ? ' (você)' : ''}`
+                        : 'Sistema';
+
+                      const texto = item.fase_anterior_id
+                        ? `${labelAutor} alterou a etapa de `
+                        : `${labelAutor} entrou na etapa `;
+                      const timestamp = formatarDataHistorico(item.entrou_em);
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="text-xs text-gray-700 leading-relaxed"
+                        >
+                          {item.fase_anterior_id ? (
+                            <>
+                              {texto}
+                              <span
+                                className="inline-flex items-center gap-1 font-medium"
+                                style={{ color: corAnterior }}
+                              >
+                                ■ {nomeAnterior}
+                              </span>
+                              {' para '}
+                              <span
+                                className="inline-flex items-center gap-1 font-medium"
+                                style={{ color: corAtual }}
+                              >
+                                ■ {nomeAtual}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              {texto}
+                              <span
+                                className="inline-flex items-center gap-1 font-medium"
+                                style={{ color: corAtual }}
+                              >
+                                ■ {nomeAtual}
+                              </span>
+                            </>
+                          )}
+                          {' '}
+                          <span className="text-gray-500 text-xs">{timestamp}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
-                  mensagens.map((mensagem: MensagemConversa) => {
-                    const remetenteRaw = mensagem.remetente?.toLowerCase() || '';
-                    const isCliente = remetenteRaw.includes('cliente') || remetenteRaw === 'cliente';
-                    const isHumano = remetenteRaw.includes('humano') || remetenteRaw === 'humano';
-                    const dataMensagem = mensagem.data_e_hora || mensagem.created_at;
-                    
-                    const base64ImagemValido = mensagem.base64_imagem && 
-                      mensagem.base64_imagem.trim() !== '' && 
-                      mensagem.base64_imagem.trim().toUpperCase() !== 'EMPTY';
-                    const temImagem = !!base64ImagemValido;
-                    
-                    const base64AudioValido = mensagem.base64_audio && 
-                      typeof mensagem.base64_audio === 'string' &&
-                      mensagem.base64_audio.trim() !== '' && 
-                      mensagem.base64_audio.trim().toUpperCase() !== 'EMPTY'
-                      ? mensagem.base64_audio.trim()
-                      : null;
-                    const temAudio = !!base64AudioValido;
-                    
-                    const base64DocumentoValido = mensagem.base64_documento && 
-                      typeof mensagem.base64_documento === 'string' &&
-                      mensagem.base64_documento.trim() !== '' && 
-                      mensagem.base64_documento.trim().toUpperCase() !== 'EMPTY' &&
-                      mensagem.base64_documento.trim().toUpperCase() !== 'NULL'
-                      ? mensagem.base64_documento.trim()
-                      : null;
-                    const temDocumento = !!base64DocumentoValido;
-                    
-                    const temTexto = mensagem.mensagem && mensagem.mensagem.trim() !== '';
-                    const dataUriImagem = temImagem ? `data:image/jpeg;base64,${mensagem.base64_imagem}` : null;
-                    const dataUriAudio = temAudio && base64AudioValido && typeof base64AudioValido === 'string'
-                      ? `data:${detectarFormatoAudio(base64AudioValido)};base64,${base64AudioValido}` 
-                      : null;
-
-                    return (
-                      <div
-                        key={mensagem.id}
-                        className={`flex ${isCliente ? 'justify-start' : 'justify-end'}`}
-                      >
-                        <div className={`max-w-[70%] flex items-end gap-2 ${isCliente ? 'flex-row' : 'flex-row-reverse'}`}>
-                          <div
-                            className={`rounded-2xl px-4 py-2 ${
-                              isCliente
-                                ? 'bg-gray-800 text-white'
-                                : isHumano
-                                  ? 'bg-primary-600 text-white'
-                                  : 'bg-gray-100 text-gray-900'
-                            }`}
-                          >
-                            {temImagem && dataUriImagem && (
-                              <div className="mb-2">
-                                <img
-                                  src={dataUriImagem}
-                                  alt="Imagem da mensagem"
-                                  className="rounded-lg cursor-pointer object-cover"
-                                  style={{
-                                    maxWidth: '300px',
-                                    maxHeight: '300px',
-                                    width: 'auto',
-                                    height: 'auto',
-                                  }}
-                                  onClick={() => {
-                                    setImagemModal({
-                                      src: dataUriImagem,
-                                      remetente: isCliente ? cliente.nome || 'Cliente' : (isHumano ? 'Você' : 'Assistente'),
-                                      dataHora: formatarDataHora(dataMensagem),
-                                    });
-                                    setZoom(1);
-                                    setPosition({ x: 0, y: 0 });
-                                  }}
-                                />
-                              </div>
-                            )}
-
-                            {temAudio && dataUriAudio && (
-                              <div className="mb-2">
-                                <AudioPlayerWhatsApp
-                                  audioSrc={dataUriAudio}
-                                  clienteId={cliente.id}
-                                  clienteNome={cliente.nome || 'Cliente'}
-                                  clienteFotoPerfil={undefined}
-                                  getClienteColor={getClienteColor}
-                                />
-                              </div>
-                            )}
-
-                            {temDocumento && base64DocumentoValido && (
-                              <div className="mb-2">
-                                <DocumentoMessage
-                                  base64Documento={base64DocumentoValido}
-                                  isCliente={isCliente}
-                                />
-                              </div>
-                            )}
-                            
-                            {temTexto && (
-                              <p className="text-sm whitespace-pre-wrap break-words">
-                                {mensagem.mensagem}
-                              </p>
-                            )}
-
-                            {!temTexto && !temImagem && !temAudio && !temDocumento && (
-                              <p className="text-sm text-gray-400 italic">
-                                Mensagem sem conteúdo
-                              </p>
-                            )}
-                          </div>
-                          <div className={`flex items-center gap-1.5 pb-1 ${isCliente ? 'justify-start' : 'justify-end'}`}>
-                            {!isCliente && (
-                              <span className={`flex-shrink-0 p-0.5 rounded ${isHumano ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`} title={isHumano ? 'Humano' : 'IA'}>
-                                {isHumano ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
-                              </span>
-                            )}
-                            <p className={`text-xs text-gray-500 ${isCliente ? 'text-left' : 'text-right'}`}>
-                              {formatarDataHora(dataMensagem)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
+                  <div className="flex items-center justify-center h-full text-gray-500">
+                    Nenhuma atualização ainda
+                  </div>
                 )}
-          </div>
-          
-          {/* Área de Comentários */}
-          <div className="border-t border-gray-200 bg-white p-4">
-            <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={(e) => e.stopPropagation()} className="space-y-2">
-              <textarea
-                value={comentario}
-                onChange={(e) => setComentario(e.target.value)}
-                placeholder="Escreva um comentário..."
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none text-sm"
-              />
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <button type="button" className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                    <Link2 className="w-4 h-4 text-gray-600" />
-                  </button>
-                  <button type="button" className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                    <span className="text-gray-600">@</span>
-                  </button>
-                  <button type="button" className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                    <Calendar className="w-4 h-4 text-gray-600" />
-                  </button>
-                  <button type="button" className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                    <Smile className="w-4 h-4 text-gray-600" />
-                  </button>
-                </div>
-                <button
-                  type="submit"
-                  disabled={!comentario.trim()}
-                  className="p-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       </div>
-
-      {/* Modal de Visualização de Imagem */}
-      {imagemModal && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
-          onClick={() => setImagemModal(null)}
-          onWheel={(e) => {
-            e.preventDefault();
-            const delta = e.deltaY > 0 ? -0.1 : 0.1;
-            setZoom(prev => Math.max(0.5, Math.min(5, prev + delta)));
-          }}
-        >
-          <div className="absolute top-4 left-4 z-10 bg-black/50 backdrop-blur-sm rounded-lg px-4 py-2 text-white">
-            <p className="text-sm font-medium">{imagemModal.remetente}</p>
-            <p className="text-xs text-gray-300">{imagemModal.dataHora}</p>
-          </div>
-          
-          <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setZoom(prev => Math.min(5, prev + 0.25));
-              }}
-              className="bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full p-2 text-white transition-colors"
-              title="Aumentar zoom"
-            >
-              <ZoomIn className="w-5 h-5" />
-            </button>
-            
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setZoom(prev => Math.max(0.5, prev - 0.25));
-              }}
-              className="bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full p-2 text-white transition-colors"
-              title="Diminuir zoom"
-            >
-              <ZoomOut className="w-5 h-5" />
-            </button>
-            
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const link = document.createElement('a');
-                link.href = imagemModal.src;
-                link.download = `imagem-${Date.now()}.jpg`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              }}
-              className="bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full p-2 text-white transition-colors"
-              title="Baixar imagem"
-            >
-              <Download className="w-5 h-5" />
-            </button>
-            
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setImagemModal(null);
-              }}
-              className="bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full p-2 text-white transition-colors"
-              title="Fechar"
-            >
-              <XCircle className="w-5 h-5" />
-            </button>
-          </div>
-          
-          <div
-            className="relative w-full h-full flex items-center justify-center overflow-hidden"
-            onMouseDown={(e) => {
-              if (zoom > 1) {
-                setIsDragging(true);
-                setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
-              }
-            }}
-            onMouseMove={(e) => {
-              if (isDragging && zoom > 1) {
-                setPosition({
-                  x: e.clientX - dragStart.x,
-                  y: e.clientY - dragStart.y,
-                });
-              }
-            }}
-            onMouseUp={() => setIsDragging(false)}
-            onMouseLeave={() => setIsDragging(false)}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setImagemModal(null);
-              }
-            }}
-          >
-            <img
-              src={imagemModal.src}
-              alt="Imagem ampliada"
-              className="max-w-full max-h-full object-contain select-none"
-              style={{
-                transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
-                cursor: zoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
-                transition: isDragging ? 'none' : 'transform 0.2s',
-              }}
-              onClick={(e) => e.stopPropagation()}
-              draggable={false}
-            />
-          </div>
-        </div>
-      )}
 
       <EditarNomeInstanciaModal
         isOpen={showEditInstanceModal}

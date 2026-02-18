@@ -4,11 +4,16 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAdminClientes } from '@/hooks/useAdminClientes';
 import { getWhatsAppInstances } from '@/lib/api/whatsapp';
-import { Usuario } from '@/lib/api/usuarios';
+import {
+  Usuario,
+  getAdministradores,
+  getDiasNaEtapaAtualPorClientes,
+} from '@/lib/api/usuarios';
 import { WhatsAppInstance } from '@/types/domain';
 import { Pagination } from '@/components/ui/Pagination';
 import { CriarClienteModal } from '@/components/admin/CriarClienteModal';
 import { CredenciaisPopup } from '@/components/admin/CredenciaisPopup';
+import { SelecionarResponsavelPopover } from '@/components/tarefas/SelecionarResponsavelPopover';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
@@ -31,6 +36,89 @@ import { useAuth } from '@/hooks/useAuth';
 interface ClienteComStatus extends Usuario {
   statusEvolution?: 'conectado' | 'desconectado' | 'conectando' | 'erro';
   instancias?: WhatsAppInstance[];
+}
+
+function ResponsavelClienteCell({
+  responsavel,
+  isOpen,
+  onOpen,
+  onClose,
+  onSelect,
+  onRemove,
+  disabled,
+  getAvatarColor,
+  getInitials,
+}: {
+  responsavel: Usuario | null;
+  isOpen: boolean;
+  onOpen: (e: React.MouseEvent) => void;
+  onClose: () => void;
+  onSelect: (admin: Usuario | null) => void;
+  onRemove?: (e: React.MouseEvent) => void;
+  disabled?: boolean;
+  getAvatarColor: (name?: string | null) => string;
+  getInitials: (name?: string | null) => string;
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  return (
+    <div className="relative group">
+      {responsavel ? (
+        <button
+          ref={buttonRef}
+          onClick={onOpen}
+          className="flex items-center gap-2 hover:opacity-85 transition-opacity pr-6"
+          title="Alterar responsável"
+        >
+          {responsavel.foto_perfil ? (
+            <img
+              src={responsavel.foto_perfil}
+              alt={responsavel.nome || 'Responsável'}
+              className="w-8 h-8 rounded-full object-cover border border-gray-200"
+            />
+          ) : (
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold border border-gray-200 ${getAvatarColor(
+                responsavel.nome
+              )}`}
+            >
+              {getInitials(responsavel.nome)}
+            </div>
+          )}
+          <span className="text-sm text-gray-600 truncate max-w-[150px]">
+            {responsavel.nome || 'Sem nome'}
+          </span>
+        </button>
+      ) : (
+        <button
+          ref={buttonRef}
+          onClick={onOpen}
+          disabled={disabled}
+          className="w-8 h-8 rounded-full border-2 border-dashed border-gray-300 text-gray-500 hover:border-primary-500 hover:text-primary-600 transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Definir responsável"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      )}
+      {responsavel && onRemove && (
+        <button
+          onClick={onRemove}
+          disabled={disabled}
+          className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Remover responsável"
+        >
+          <X className="w-2.5 h-2.5" />
+        </button>
+      )}
+      <SelecionarResponsavelPopover
+        isOpen={isOpen}
+        onClose={onClose}
+        onSelect={onSelect}
+        responsavelAtual={responsavel}
+        buttonRef={buttonRef}
+      />
+    </div>
+  );
 }
 
 const ITEMS_PER_PAGE = 6;
@@ -78,11 +166,15 @@ export default function AdminClientesPage() {
   const [editColumnName, setEditColumnName] = useState('');
   const [editColumnColor, setEditColumnColor] = useState('#6b7280');
   const [updatingFase, setUpdatingFase] = useState(false);
+  const [administradores, setAdministradores] = useState<Usuario[]>([]);
+  const [responsavelPopoverClienteId, setResponsavelPopoverClienteId] = useState<string | null>(null);
+  const [updatingResponsavelId, setUpdatingResponsavelId] = useState<string | null>(null);
   const kanbanScrollRef = useRef<HTMLDivElement>(null);
   const scrollAnimationRef = useRef<number | null>(null);
   const lastScrollTimeRef = useRef<number>(0);
   const scrollDirectionRef = useRef<'left' | 'right' | null>(null);
   const [tarefasPendentesPorCliente, setTarefasPendentesPorCliente] = useState<Record<string, number>>({});
+  const [diasNaEtapaPorCliente, setDiasNaEtapaPorCliente] = useState<Record<string, number>>({});
 
   // Carregar colunas do Kanban do Supabase
   useEffect(() => {
@@ -99,11 +191,34 @@ export default function AdminClientesPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAdministradores = async () => {
+      try {
+        const admins = await getAdministradores();
+        if (!cancelled) {
+          setAdministradores(admins);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar administradores:', error);
+      }
+    };
+
+    loadAdministradores();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Buscar status de conexão para cada cliente
   useEffect(() => {
     async function loadStatus() {
       if (!clientes.length) {
         setClientesComStatus([]);
+        setTarefasPendentesPorCliente({});
+        setDiasNaEtapaPorCliente({});
         setLoadingStatus(false);
         return;
       }
@@ -136,14 +251,18 @@ export default function AdminClientesPage() {
       setClientesComStatus(clientesComStatusData);
       setLoadingStatus(false);
 
-      // Buscar contagens de tarefas pendentes
+      // Buscar contagens de tarefas pendentes e dias na etapa atual
       try {
         const clienteIds = clientesComStatusData.map((c) => c.id);
         const contagens = await getContagemTarefasPendentesPorClientes(clienteIds);
         setTarefasPendentesPorCliente(contagens);
+
+        const diasNaEtapa = await getDiasNaEtapaAtualPorClientes(clientesComStatusData);
+        setDiasNaEtapaPorCliente(diasNaEtapa);
       } catch (error) {
         console.error('Erro ao buscar contagens de tarefas pendentes:', error);
         setTarefasPendentesPorCliente({});
+        setDiasNaEtapaPorCliente({});
       }
     }
 
@@ -284,6 +403,67 @@ export default function AdminClientesPage() {
     ];
     const index = name.charCodeAt(0) % colors.length;
     return colors[index];
+  };
+
+  const administradoresMap = useMemo(() => {
+    return new Map(administradores.map((admin) => [admin.id, admin]));
+  }, [administradores]);
+
+  const getResponsavelCliente = (cliente: ClienteComStatus) => {
+    if (!cliente.admin_responsavel) return null;
+    return administradoresMap.get(cliente.admin_responsavel) || null;
+  };
+
+  const handleOpenResponsavelPopover = (e: React.MouseEvent, clienteId: string) => {
+    e.stopPropagation();
+    setResponsavelPopoverClienteId(clienteId);
+  };
+
+  const handleSelecionarResponsavelCliente = async (
+    cliente: ClienteComStatus,
+    admin: Usuario | null
+  ) => {
+    setUpdatingResponsavelId(cliente.id);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Não autenticado');
+      }
+
+      const response = await fetch('/api/admin/atualizar-responsavel-cliente', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          clienteId: cliente.id,
+          responsavelId: admin?.id || null,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao atualizar responsável');
+      }
+
+      setClientesComStatus((prev) =>
+        prev.map((item) =>
+          item.id === cliente.id
+            ? { ...item, admin_responsavel: admin?.id || null }
+            : item
+        )
+      );
+
+      setResponsavelPopoverClienteId(null);
+      refetch();
+    } catch (error: any) {
+      alert(error.message || 'Erro ao atualizar responsável. Tente novamente.');
+    } finally {
+      setUpdatingResponsavelId(null);
+    }
   };
 
   const handleDeleteClick = (e: React.MouseEvent, cliente: ClienteComStatus) => {
@@ -1055,7 +1235,7 @@ export default function AdminClientesPage() {
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50 rounded-tl-xl">Nome do Cliente</th>
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Telefone IA</th>
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">WhatsApp</th>
-                <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Tipo Marcação</th>
+                <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Responsável</th>
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Fase</th>
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-700 bg-gray-50">Status</th>
                 <th className="px-6 py-3 text-right text-sm font-bold text-gray-700 bg-gray-50 rounded-tr-xl">Ações</th>
@@ -1066,6 +1246,8 @@ export default function AdminClientesPage() {
                 const statusConexao = formatarStatusConexao(cliente.statusEvolution);
                 const fase = formatarFase(cliente.fase);
                 const status = formatarStatus(cliente.ativo);
+                const responsavel = getResponsavelCliente(cliente);
+                const atualizandoResponsavel = updatingResponsavelId === cliente.id;
 
                 return (
                   <tr
@@ -1098,7 +1280,25 @@ export default function AdminClientesPage() {
                         {statusConexao.texto}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{formatarTipoMarcacao(cliente.tipo_marcacao)}</td>
+                    <td className="px-6 py-4">
+                      <ResponsavelClienteCell
+                        responsavel={responsavel}
+                        isOpen={responsavelPopoverClienteId === cliente.id}
+                        onOpen={(e) => handleOpenResponsavelPopover(e, cliente.id)}
+                        onClose={() => {
+                          if (updatingResponsavelId) return;
+                          setResponsavelPopoverClienteId(null);
+                        }}
+                        onSelect={(admin) => handleSelecionarResponsavelCliente(cliente, admin)}
+                        onRemove={(e) => {
+                          e.stopPropagation();
+                          handleSelecionarResponsavelCliente(cliente, null);
+                        }}
+                        disabled={atualizandoResponsavel}
+                        getAvatarColor={getAvatarColor}
+                        getInitials={getInitials}
+                      />
+                    </td>
                     <td className="px-6 py-4">
                       <span 
                         className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${fase.cor || ''}`}
@@ -1349,6 +1549,12 @@ export default function AdminClientesPage() {
                             </div>
                             <div>
                               <p className="text-gray-500">Tipo: {formatarTipoMarcacao(cliente.tipo_marcacao)}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500">
+                                Etapa atual: {diasNaEtapaPorCliente[cliente.id] ?? 0}{' '}
+                                {(diasNaEtapaPorCliente[cliente.id] ?? 0) === 1 ? 'dia' : 'dias'}
+                              </p>
                             </div>
                             <div className="flex justify-end gap-1">
                               <span className={`px-1.5 py-0.5 inline-flex text-[10px] leading-3 font-semibold rounded-full ${statusConexao.cor}`}>

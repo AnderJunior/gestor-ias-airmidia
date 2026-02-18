@@ -2,7 +2,7 @@
 
 Este documento descreve todas as tabelas do banco de dados Supabase e seus relacionamentos, refletindo o estado atual do sistema.
 
-**Última atualização:** Fevereiro 2025
+**Última atualização:** Fevereiro 2026
 
 ---
 
@@ -16,7 +16,8 @@ usuarios (1) ──┬──> (N) clientes
                ├──> (N) atendimentos_solicitado
                ├──> (N) agendamentos
                ├──> (N) webhooks_apis
-               └──> (N) tarefas (via cliente_id = dono da tarefa)
+               ├──> (N) tarefas (via cliente_id = dono da tarefa)
+               └──> (N) usuarios_fase_historico
 
 clientes (1) ──┬──> (N) atendimentos_solicitado
                └──> (N) agendamentos
@@ -47,6 +48,7 @@ Armazena informações dos usuários do sistema (integração com Supabase Auth)
 | `ativo` | BOOLEAN | Se o usuário está ativo (default: true) |
 | `created_at` | TIMESTAMPTZ | Data de criação |
 | `updated_at` | TIMESTAMPTZ | Data da última atualização |
+| `admin_responsavel` | UUID | Ligação com id de usuarios para atrellar o responsavel do clinte |
 
 **Relacionamentos:**
 - Pertence a `auth.users` (ON DELETE CASCADE)
@@ -237,11 +239,40 @@ Armazena as colunas do Kanban na área administrativa (fases dos clientes). Comp
 
 ---
 
+### 10. `usuarios_fase_historico`
+
+Armazena o histórico de permanência dos clientes por etapa no Kanban.
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `id` | UUID (PK) | Identificador único do histórico |
+| `usuario_id` | UUID (FK) | Referência ao cliente da plataforma (`usuarios.id`) |
+| `fase_id` | TEXT | Identificador da etapa (mesmo valor usado em `usuarios.fase`) |
+| `entrou_em` | TIMESTAMPTZ | Data e hora de entrada na etapa |
+| `alterado_por` | UUID (FK) | Usuário que realizou a alteração da etapa |
+| `created_at` | TIMESTAMPTZ | Data de criação do registro |
+
+**Regras importantes:**
+- Cada mudança de fase gera um novo registro (histórico de eventos)
+- O campo `entrou_em` representa o momento da troca para a fase registrada
+
+**Relacionamentos:**
+- `usuario_id` -> `usuarios.id` (ON DELETE CASCADE)
+- `alterado_por` -> `usuarios.id` (ON DELETE SET NULL)
+
+---
+
+
 ## 🔄 Políticas RLS (Row Level Security)
 
 Todas as tabelas têm RLS habilitado. Em geral:
 - **Usuários comuns:** veem e editam apenas seus próprios dados
 - **Administradores (`tipo = 'administracao'`):** podem ver e gerenciar dados de todos os usuários (com restrições em certas tabelas)
+
+No caso da tabela `usuarios_fase_historico`:
+- Apenas usuários com `tipo = 'administracao'` podem fazer `SELECT`
+- Não há políticas de `INSERT/UPDATE/DELETE` para usuários autenticados comuns
+
 
 **Função auxiliar:** `is_admin()` retorna true se o usuário atual tem `tipo = 'administracao'` em `usuarios`.
 
@@ -285,6 +316,7 @@ Tabelas habilitadas para Realtime:
 | `update-tipo-marcacao-admin.sql` | Inclusão de 'administracao' em tipo_marcacao |
 | `create-table-tarefas.sql` | Criação da tabela tarefas |
 | `create-table-kanban-colunas.sql` | Criação da tabela kanban_colunas |
+| `create-table-usuarios-fase-historico.sql` | Criação da tabela usuarios_fase_historico e RLS de leitura para administradores |
 | `create-table-webhooks-apis.sql` | Criação da tabela webhooks_apis |
 | `enable-realtime.sql` | Habilita Realtime nas tabelas |
 | `update-foreign-keys-on-admin-delete.sql` | Função para exclusão de admins |

@@ -149,6 +149,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Registrar entrada inicial no histórico de fases (para cálculo "Etapa atual: X dias")
+    const { error: historicoError } = await supabaseAdmin
+      .from('usuarios_fase_historico')
+      .insert({
+        usuario_id: usuarioData.id,
+        fase_id: usuarioData.fase || fasePadrao || 'teste',
+        entrou_em: usuarioData.created_at,
+        alterado_por: user.id,
+      });
+
+    if (historicoError) {
+      console.error('Erro ao criar histórico inicial de fase:', historicoError);
+      // Não falhar a criação do cliente por isso
+    }
+
     // Criar registro na tabela whatsapp_instances para o novo cliente
     // NOTA: Isso apenas cria o registro na tabela, NÃO cria instância na Evolution API
     try {

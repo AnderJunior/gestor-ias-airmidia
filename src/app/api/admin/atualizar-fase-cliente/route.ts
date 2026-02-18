@@ -141,12 +141,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const faseAnterior = cliente.fase || 'teste';
+    const faseNova = fase;
+    const houveMudancaDeFase = faseAnterior !== faseNova;
+    const momentoAlteracao = new Date().toISOString();
+
     // Atualizar fase do cliente
     const { data: updatedCliente, error: updateError } = await supabaseAdmin
       .from('usuarios')
       .update({ 
         fase,
-        updated_at: new Date().toISOString()
+        updated_at: momentoAlteracao
       })
       .eq('id', clienteId)
       .select()
@@ -158,6 +163,26 @@ export async function POST(request: NextRequest) {
         { error: updateError.message || 'Erro ao atualizar fase do cliente' },
         { status: 500 }
       );
+    }
+
+    // Registrar histórico diretamente no sistema (sem trigger no banco)
+    if (houveMudancaDeFase) {
+      const { error: criarHistoricoError } = await supabaseAdmin
+        .from('usuarios_fase_historico')
+        .insert({
+          usuario_id: clienteId,
+          fase_id: fase,
+          entrou_em: momentoAlteracao,
+          alterado_por: user.id,
+        });
+
+      if (criarHistoricoError) {
+        console.error('Erro ao criar histórico da nova fase:', criarHistoricoError);
+        return NextResponse.json(
+          { error: criarHistoricoError.message || 'Erro ao registrar histórico da nova fase' },
+          { status: 500 }
+        );
+      }
     }
 
     // Buscar nova etapa do kanban após atualização
@@ -190,12 +215,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Acionar webhooks baseado na mudança
-    const faseAnterior = cliente.fase || 'teste';
-    const faseNova = fase;
-
     // Sempre acionar webhook de atualização de status (mudança de etapa no kanban)
-    if (etapaAnterior !== etapaNova || faseAnterior !== faseNova) {
+    if (etapaAnterior !== etapaNova || houveMudancaDeFase) {
       try {
         await triggerWebhookAtualizarStatusCliente({
           id: updatedCliente.id,

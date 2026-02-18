@@ -3,11 +3,13 @@ import { supabase } from '../supabaseClient';
 export interface Usuario {
   id: string;
   nome: string | null;
+  foto_perfil?: string | null;
   telefone_ia: string | null;
   tipo_marcacao?: 'atendimento' | 'agendamento' | 'administracao';
   tipo?: 'cliente' | 'administracao';
   fase?: 'teste' | 'producao';
   ativo?: boolean;
+  admin_responsavel?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -271,5 +273,102 @@ export async function getAdministradores(): Promise<Usuario[]> {
   }
 
   return data || [];
+}
+
+/**
+ * Busca os dias na etapa atual para cada cliente.
+ * Cálculo: data atual - entrou_em (registro mais recente onde fase_id = fase atual do cliente).
+ * @param clientes - Lista de clientes com id e fase
+ */
+export async function getDiasNaEtapaAtualPorClientes(
+  clientes: Array<{ id: string; fase?: string | null }>
+): Promise<Record<string, number>> {
+  if (!clientes.length) return {};
+
+  const clienteIds = clientes.map((c) => c.id);
+  const clientePorId = new Map(clientes.map((c) => [c.id, c]));
+
+  const { data, error } = await supabase
+    .from('usuarios_fase_historico')
+    .select('usuario_id, fase_id, entrou_em')
+    .in('usuario_id', clienteIds)
+    .order('entrou_em', { ascending: false });
+
+  if (error) {
+    console.error('Erro ao buscar histórico de fases:', error);
+    return {};
+  }
+
+  const agora = Date.now();
+  const diasPorCliente: Record<string, number> = {};
+
+  // Para cada cliente, usa o primeiro registro (mais recente) onde fase_id = fase atual
+  const jaPreenchidos = new Set<string>();
+  (data || []).forEach((reg) => {
+    if (jaPreenchidos.has(reg.usuario_id)) return;
+    const cliente = clientePorId.get(reg.usuario_id);
+    if (!cliente) return;
+    const faseAtual = cliente.fase ?? '';
+    if (reg.fase_id !== faseAtual) return;
+
+    jaPreenchidos.add(reg.usuario_id);
+    const entrouEmMs = new Date(reg.entrou_em).getTime();
+    const diffMs = Math.max(0, agora - entrouEmMs);
+    const dias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    diasPorCliente[reg.usuario_id] = dias;
+  });
+
+  return diasPorCliente;
+}
+
+export interface HistoricoFaseItem {
+  id: string;
+  fase_id: string;
+  entrou_em: string;
+  alterado_por: string | null;
+  alterado_por_nome: string | null;
+  fase_anterior_id: string | null;
+}
+
+/**
+ * Busca o histórico de mudanças de etapa de um cliente para exibir na área de mensagens.
+ */
+export async function getHistoricoFaseCliente(usuarioId: string): Promise<HistoricoFaseItem[]> {
+  const { data, error } = await supabase
+    .from('usuarios_fase_historico')
+    .select('id, fase_id, entrou_em, alterado_por')
+    .eq('usuario_id', usuarioId)
+    .order('entrou_em', { ascending: true });
+
+  if (error) {
+    console.error('Erro ao buscar histórico de fases:', error);
+    return [];
+  }
+
+  const registros = data || [];
+  if (registros.length === 0) return [];
+
+  const alteradoPorIds = [...new Set(registros.map((r) => r.alterado_por).filter(Boolean))] as string[];
+  const nomesMap = new Map<string, string>();
+
+  if (alteradoPorIds.length > 0) {
+    const { data: usuarios } = await supabase
+      .from('usuarios')
+      .select('id, nome')
+      .in('id', alteradoPorIds);
+
+    (usuarios || []).forEach((u) => {
+      nomesMap.set(u.id, u.nome || '');
+    });
+  }
+
+  return registros.map((reg, index) => ({
+    id: reg.id,
+    fase_id: reg.fase_id,
+    entrou_em: reg.entrou_em,
+    alterado_por: reg.alterado_por,
+    alterado_por_nome: reg.alterado_por ? nomesMap.get(reg.alterado_por) ?? null : null,
+    fase_anterior_id: index > 0 ? registros[index - 1].fase_id : null,
+  }));
 }
 
