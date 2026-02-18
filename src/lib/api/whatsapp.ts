@@ -33,7 +33,7 @@ export function clearInstancesCache(userId?: string) {
  */
 export async function getWhatsAppInstances(userId?: string): Promise<WhatsAppInstance[]> {
   let finalUserId = userId;
-  
+
   // Se não forneceu userId, buscar do auth
   if (!finalUserId) {
     const { data: { user } } = await supabase.auth.getUser();
@@ -119,15 +119,34 @@ export async function upsertWhatsAppInstance(
   status: StatusWhatsAppInstance = 'desconectado',
   userId?: string
 ): Promise<WhatsAppInstance> {
+  // Verificar se a instância já existe para não sobrescrever o usuario_id acidentalmente
+  const existingInstance = await getWhatsAppInstanceByTelefone(telefone);
+
+  const updateData: any = {
+    telefone,
+    instance_name: instanceName,
+    evolution_api_instance_id: evolutionApiInstanceId,
+    status,
+    updated_at: new Date().toISOString(),
+  };
+
+  // Se a instância já existe, NÃO atualizar o usuario_id (preservar o dono original)
+  // A menos que não tenha dono (o que não deve acontecer), aí usamos o userId fornecido
+  if (existingInstance) {
+    // Manter o usuario_id original
+    if (!existingInstance.usuario_id && userId) {
+      updateData.usuario_id = userId;
+    }
+  } else {
+    // Se é nova, usuario_id é obrigatório
+    if (userId) {
+      updateData.usuario_id = userId;
+    }
+  }
+
   const { data, error } = await supabase
     .from('whatsapp_instances')
-    .upsert({
-      telefone,
-      instance_name: instanceName,
-      evolution_api_instance_id: evolutionApiInstanceId,
-      status,
-      updated_at: new Date().toISOString(),
-    }, {
+    .upsert(updateData, {
       onConflict: 'telefone',
     })
     .select()
@@ -139,11 +158,8 @@ export async function upsertWhatsAppInstance(
   }
 
   // Limpar cache se tiver userId
-  if (data?.usuario_id || userId) {
-    const finalUserId = data?.usuario_id || userId;
-    if (finalUserId) {
-      clearInstancesCache(finalUserId);
-    }
+  if (data?.usuario_id) {
+    clearInstancesCache(data.usuario_id);
   }
 
   return data;
@@ -192,7 +208,7 @@ export async function updateWhatsAppInstanceStatus(
  */
 export async function getConnectedInstances(userId?: string): Promise<WhatsAppInstance[]> {
   let finalUserId = userId;
-  
+
   // Se não forneceu userId, buscar do auth
   if (!finalUserId) {
     const { data: { user } } = await supabase.auth.getUser();
@@ -275,7 +291,7 @@ export async function getWhatsAppInstanceByInstanceName(instanceName: string, us
  */
 export async function getInstanceNameByUsuario(userId?: string): Promise<string | null> {
   let finalUserId = userId;
-  
+
   // Se não forneceu userId, buscar do auth
   if (!finalUserId) {
     const { data: { user } } = await supabase.auth.getUser();
@@ -286,7 +302,7 @@ export async function getInstanceNameByUsuario(userId?: string): Promise<string 
   }
 
   const instances = await getWhatsAppInstances(finalUserId);
-  
+
   if (instances.length === 0) {
     return null;
   }
@@ -303,7 +319,7 @@ export async function verificarStatusConexaoSupabase(instanceName: string): Prom
   status: 'conectado' | 'desconectado' | 'conectando' | 'erro';
 }> {
   const instance = await getWhatsAppInstanceByInstanceName(instanceName);
-  
+
   if (!instance) {
     return { conectado: false, status: 'desconectado' };
   }
@@ -319,21 +335,21 @@ export async function verificarStatusConexaoSupabase(instanceName: string): Prom
  * Evita que, ao "entrar na conta" do cliente, a sessão do admin sobrescreva o usuario_id.
  */
 async function obterUsuarioIdParaSincronizacao(instanceName: string, telefone: string): Promise<string | null> {
-  // Primeiro, tentar buscar da instância existente no Supabase
+  // Primeiro, tentar buscar da instância existente no Supabase pelo nome
   const instance = await getWhatsAppInstanceByInstanceName(instanceName);
   if (instance?.usuario_id) {
     return instance.usuario_id;
   }
 
-  // Se não encontrou, tentar buscar pelo telefone
-  const instanceByTelefone = await supabase
+  // Se não encontrou pelo nome, tentar buscar pelo telefone
+  const { data } = await supabase
     .from('whatsapp_instances')
     .select('usuario_id')
     .eq('telefone', telefone)
-    .single();
+    .maybeSingle();
 
-  if (instanceByTelefone.data?.usuario_id) {
-    return instanceByTelefone.data.usuario_id;
+  if (data?.usuario_id) {
+    return data.usuario_id;
   }
 
   // Não usar auth.getUser() aqui: ao impersonar cliente, a sessão pode ainda ser do admin
@@ -343,8 +359,8 @@ async function obterUsuarioIdParaSincronizacao(instanceName: string, telefone: s
 
 /**
  * Sincroniza o status da instância no Supabase com base no status da Evolution API.
- * Só atualiza usuario_id quando ele é passado ou encontrado no banco; nunca usa o usuário autenticado
- * para não sobrescrever com o ID do admin ao "entrar na conta" do cliente.
+ * Só atualiza usuario_id quando ele é passado OU encontrado no banco;
+ * IMPORTANTE: Nunca sobrescreve um usuario_id existente com um novo, para evitar que admin "roube" a instância ao impersonar.
  */
 export async function sincronizarStatusInstancia(
   instanceName: string,
@@ -353,11 +369,8 @@ export async function sincronizarStatusInstancia(
   usuarioId?: string,
   qrCode?: string
 ): Promise<WhatsAppInstance> {
-  let finalUsuarioId: string | undefined = usuarioId;
-  if (!finalUsuarioId) {
-    const usuarioIdObtido = await obterUsuarioIdParaSincronizacao(instanceName, telefone);
-    finalUsuarioId = usuarioIdObtido || undefined;
-  }
+  // Tentar descobrir se a instância já existe e quem é o dono
+  const donoRealId = await obterUsuarioIdParaSincronizacao(instanceName, telefone);
 
   const updateData: any = {
     instance_name: instanceName,
@@ -365,9 +378,16 @@ export async function sincronizarStatusInstancia(
     updated_at: new Date().toISOString(),
   };
 
-  // Só incluir usuario_id quando sabemos com certeza (evita sobrescrever com admin ao impersonar)
-  if (finalUsuarioId) {
-    updateData.usuario_id = finalUsuarioId;
+  // Lógica crítica:
+  // 1. Se a instância já existe (donoRealId existe), NÃO incluímos usuario_id no update para não mudar o dono
+  // 2. Se a instância NÃO existe (donoRealId null), usamos o usuarioId passado para criar
+  if (!donoRealId && usuarioId) {
+    updateData.usuario_id = usuarioId;
+  }
+
+  // Se existe mas não tem dono (caso raro de migração), podemos atribuir
+  if (donoRealId === null && usuarioId) {
+    updateData.usuario_id = usuarioId;
   }
 
   if (qrCode) {
@@ -376,40 +396,24 @@ export async function sincronizarStatusInstancia(
     updateData.qr_code = null;
   }
 
-  let data: WhatsAppInstance;
+  // Use upsert para lidar tanto com criação quanto atualização
+  const { data, error } = await supabase
+    .from('whatsapp_instances')
+    .upsert(
+      { telefone, ...updateData },
+      { onConflict: 'telefone' }
+    )
+    .select()
+    .single();
 
-  if (finalUsuarioId) {
-    // Upsert completo (insert ou update com usuario_id)
-    const result = await supabase
-      .from('whatsapp_instances')
-      .upsert(
-        { telefone, ...updateData },
-        { onConflict: 'telefone' }
-      )
-      .select()
-      .single();
-    if (result.error) {
-      console.error('Error syncing instance status:', result.error);
-      throw result.error;
-    }
-    data = result.data;
-    clearInstancesCache(finalUsuarioId);
-  } else {
-    // Sem usuario_id: só atualizar linha existente (status/qr), nunca criar nem alterar dono
-    const result = await supabase
-      .from('whatsapp_instances')
-      .update(updateData)
-      .eq('telefone', telefone)
-      .select()
-      .single();
-    if (result.error) {
-      console.error('Error syncing instance status (update only):', result.error);
-      throw result.error;
-    }
-    data = result.data;
-    if (data?.usuario_id) {
-      clearInstancesCache(data.usuario_id);
-    }
+  if (error) {
+    console.error('Error syncing instance status:', error);
+    throw error;
+  }
+
+  // Limpar cache do dono da instância
+  if (data?.usuario_id) {
+    clearInstancesCache(data.usuario_id);
   }
 
   return data;

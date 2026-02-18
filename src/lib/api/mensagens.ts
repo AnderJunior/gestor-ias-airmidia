@@ -98,6 +98,8 @@ export async function getMensagensByCliente(clienteId: string, userId?: string):
   }
 
   // Buscar em lotes e em paralelo para não demorar minutos
+  // Otimização: limitar a 50 mensagens por lote para evitar timeout e travamento do navegador
+  // Ordenar por data decrescente (mais recentes primeiro) e depois inverter
   const chunksIds = chunk(clienteIds, CHUNK_SIZE);
   const promises = chunksIds.map((ids) =>
     supabase
@@ -105,17 +107,21 @@ export async function getMensagensByCliente(clienteId: string, userId?: string):
       .select('*')
       .in('cliente_id', ids)
       .eq('usuario_id', userId)
-      .order('data_e_hora', { ascending: true })
+      .order('data_e_hora', { ascending: false }) // Mais recentes primeiro
+      .limit(50) // Limitar a 50 mensagens
   );
   const results = await Promise.all(promises);
   const todas: any[] = [];
   const chunksComErroDataHora: string[][] = [];
+
   for (let i = 0; i < results.length; i++) {
     const res = results[i];
     if (res.error && res.error.code === '42703' && res.error.message?.includes('data_e_hora')) {
       chunksComErroDataHora.push(chunksIds[i]);
     } else if (!res.error && res.data) {
-      todas.push(...res.data.map((r: any) => normalizarMensagem(r)));
+      // Inverter a ordem para ficar cronológico (mais antigo -> mais recente)
+      const msgs = res.data.reverse().map((r: any) => normalizarMensagem(r));
+      todas.push(...msgs);
     }
   }
   if (chunksComErroDataHora.length > 0) {
@@ -126,11 +132,16 @@ export async function getMensagensByCliente(clienteId: string, userId?: string):
           .select('*')
           .in('cliente_id', ids)
           .eq('usuario_id', userId)
-          .order('created_at', { ascending: true })
+          .order('created_at', { ascending: false })
+          .limit(50)
       )
     );
     for (const r of retries) {
-      if (!r.error && r.data) todas.push(...r.data.map((row: any) => normalizarMensagem(row)));
+      if (!r.error && r.data) {
+        // Inverter a ordem para ficar cronológico
+        const msgs = r.data.reverse().map((row: any) => normalizarMensagem(row));
+        todas.push(...msgs);
+      }
     }
   }
 
@@ -281,11 +292,19 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
     const msgPromises = msgChunks.map((ids) =>
       supabase
         .from('mensagens')
-        .select('*')
+        .select(`
+          id,
+          cliente_id,
+          usuario_id,
+          mensagem,
+          remetente,
+          data_e_hora,
+          created_at
+        `) // Selecionar campos específicos para evitar carregar base64
         .in('cliente_id', ids)
         .eq('usuario_id', userId)
         .order('data_e_hora', { ascending: false })
-        .limit(5000)
+        .limit(10) // Reduzido de 5000 para 10, pois só precisamos da última
     );
     const msgResults = await Promise.all(msgPromises);
     const chunksRetry: string[][] = [];
@@ -302,11 +321,19 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
         chunksRetry.map((ids) =>
           supabase
             .from('mensagens')
-            .select('*')
+            .select(`
+              id,
+              cliente_id,
+              usuario_id,
+              mensagem,
+              remetente,
+              data_e_hora,
+              created_at
+            `)
             .in('cliente_id', ids)
             .eq('usuario_id', userId)
             .order('created_at', { ascending: false })
-            .limit(5000)
+            .limit(10)
         )
       );
       for (const r of retries) {
@@ -321,7 +348,7 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
   if (mensagens.length > 0) {
     for (const mensagem of mensagens) {
       const mensagemData = mensagem as any;
-      
+
       // Obter cliente_id: pode vir diretamente da mensagem ou através do atendimento
       let clienteId = mensagemData.cliente_id;
       if (!clienteId) {
@@ -341,18 +368,18 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
       const dataMensagem = mensagemData.data_e_hora || mensagemData.created_at;
 
       // Verificar tipo da mensagem
-      const base64AudioValido = mensagemData.base64_audio && 
+      const base64AudioValido = mensagemData.base64_audio &&
         typeof mensagemData.base64_audio === 'string' &&
-        mensagemData.base64_audio.trim() !== '' && 
+        mensagemData.base64_audio.trim() !== '' &&
         mensagemData.base64_audio.trim().toUpperCase() !== 'EMPTY';
-      
-      const base64ImagemValido = mensagemData.base64_imagem && 
-        mensagemData.base64_imagem.trim() !== '' && 
+
+      const base64ImagemValido = mensagemData.base64_imagem &&
+        mensagemData.base64_imagem.trim() !== '' &&
         mensagemData.base64_imagem.trim().toUpperCase() !== 'EMPTY';
-      
-      const base64DocumentoValido = mensagemData.base64_documento && 
+
+      const base64DocumentoValido = mensagemData.base64_documento &&
         typeof mensagemData.base64_documento === 'string' &&
-        mensagemData.base64_documento.trim() !== '' && 
+        mensagemData.base64_documento.trim() !== '' &&
         mensagemData.base64_documento.trim().toUpperCase() !== 'EMPTY' &&
         mensagemData.base64_documento.trim().toUpperCase() !== 'NULL';
 
@@ -370,7 +397,7 @@ export async function getClientesComConversas(userId?: string): Promise<ClienteC
       const clienteDoUsuario = clienteDoUsuarioPorTelefone.get(telefone);
       const clienteIdParaUsar = clienteDoUsuario?.id || cliente.id;
       const conversaExistente = conversasPorTelefone.get(telefone);
-      
+
       if (!conversaExistente) {
         // Criar nova conversa
         const clienteFinal = clienteDoUsuario || cliente;
@@ -441,16 +468,16 @@ export async function createMensagem(
 ): Promise<Mensagem> {
   // Buscar informações do atendimento para identificar telefones
   const atendimento = await getAtendimentoById(atendimentoId);
-  
+
   if (!atendimento) {
     throw new Error('Atendimento não encontrado');
   }
 
   // Determinar remetente e destinatário baseado no tipo
-  const telefoneRemetente = tipo === 'bot' 
-    ? atendimento.telefone_usuario 
+  const telefoneRemetente = tipo === 'bot'
+    ? atendimento.telefone_usuario
     : atendimento.telefone_cliente;
-  
+
   const telefoneDestinatario = tipo === 'bot'
     ? atendimento.telefone_cliente
     : atendimento.telefone_usuario;

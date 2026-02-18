@@ -31,13 +31,13 @@ interface MensagemExibicao {
 }
 
 // Componente de Player de Áudio estilo WhatsApp
-function AudioPlayerWhatsApp({ 
-  audioSrc, 
-  clienteId, 
-  clienteNome, 
+function AudioPlayerWhatsApp({
+  audioSrc,
+  clienteId,
+  clienteNome,
   clienteFotoPerfil,
   getClienteColor
-}: { 
+}: {
   audioSrc: string;
   clienteId: string;
   clienteNome: string;
@@ -49,7 +49,7 @@ function AudioPlayerWhatsApp({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [waveform, setWaveform] = useState<number[]>([]);
-  
+
   // Gerar waveform simples - valores mais variados para melhor visualização
   useEffect(() => {
     const bars = Array.from({ length: 50 }, () => {
@@ -58,11 +58,11 @@ function AudioPlayerWhatsApp({
     });
     setWaveform(bars);
   }, []);
-  
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    
+
     const updateTime = () => setCurrentTime(audio.currentTime);
     const updateDuration = () => setDuration(audio.duration);
     const handlePlay = () => setIsPlaying(true);
@@ -71,13 +71,13 @@ function AudioPlayerWhatsApp({
       setIsPlaying(false);
       setCurrentTime(0);
     };
-    
+
     audio.addEventListener('timeupdate', updateTime);
     audio.addEventListener('loadedmetadata', updateDuration);
     audio.addEventListener('play', handlePlay);
     audio.addEventListener('pause', handlePause);
     audio.addEventListener('ended', handleEnded);
-    
+
     return () => {
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('loadedmetadata', updateDuration);
@@ -86,31 +86,31 @@ function AudioPlayerWhatsApp({
       audio.removeEventListener('ended', handleEnded);
     };
   }, []);
-  
+
   const togglePlay = () => {
     const audio = audioRef.current;
     if (!audio) return;
-    
+
     if (isPlaying) {
       audio.pause();
     } else {
       audio.play();
     }
   };
-  
+
   const formatTime = (seconds: number) => {
     if (isNaN(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
-  
+
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const activeBarIndex = Math.floor((progress / 100) * waveform.length);
   const cor = getClienteColor(clienteId);
   const inicial = clienteNome.charAt(0).toUpperCase();
   const fotoValida = filterWhatsAppUrl(clienteFotoPerfil);
-  
+
   return (
     <div className="flex items-center gap-2 pt-1">
       {/* Áudio oculto para controle */}
@@ -128,7 +128,7 @@ function AudioPlayerWhatsApp({
         <source src={audioSrc} type="audio/wav" />
         <source src={audioSrc} type="audio/webm" />
       </audio>
-      
+
       {/* Avatar com ícone de microfone */}
       <div className="relative flex-shrink-0">
         {fotoValida ? (
@@ -149,7 +149,7 @@ function AudioPlayerWhatsApp({
           <Mic className="w-3 h-3 text-white" />
         </div>
       </div>
-      
+
       {/* Botão Play/Pause */}
       <button
         onClick={togglePlay}
@@ -161,13 +161,13 @@ function AudioPlayerWhatsApp({
           <Play className="w-4 h-4 text-white ml-0.5" />
         )}
       </button>
-      
+
       {/* Waveform e tempo */}
       <div className="flex-1 min-w-0">
         {/* Waveform - clicável para navegar no áudio */}
-        <div 
+        <div
           className="flex items-end gap-0.5 cursor-pointer relative"
-          style={{ 
+          style={{
             height: '24px',
             minHeight: '24px',
             maxHeight: '24px',
@@ -176,12 +176,12 @@ function AudioPlayerWhatsApp({
           onClick={(e) => {
             const audio = audioRef.current;
             if (!audio || !duration || duration <= 0) return;
-            
+
             const rect = e.currentTarget.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
             const percentage = Math.max(0, Math.min(1, clickX / rect.width));
             const newTime = percentage * duration;
-            
+
             audio.currentTime = newTime;
             setCurrentTime(newTime);
           }}
@@ -198,7 +198,7 @@ function AudioPlayerWhatsApp({
             const barHeight = Math.max(minBarHeight, height * maxBarHeight);
             const inactiveHeight = Math.max(4, height * maxBarHeight * 0.5);
             const finalHeight = isActive ? barHeight : inactiveHeight;
-            
+
             return (
               <div
                 key={index}
@@ -229,7 +229,7 @@ function AudioPlayerWhatsApp({
             ))
           )}
         </div>
-        
+
         {/* Tempo */}
         <div className="flex items-center justify-between text-xs text-white/90">
           <span>{formatTime(currentTime)}</span>
@@ -243,10 +243,10 @@ function AudioPlayerWhatsApp({
 }
 
 // Componente de Documento estilo WhatsApp
-function DocumentoMessage({ 
-  base64Documento, 
-  isCliente 
-}: { 
+function DocumentoMessage({
+  base64Documento,
+  isCliente
+}: {
   base64Documento: string;
   isCliente: boolean;
 }) {
@@ -270,18 +270,18 @@ function DocumentoMessage({
       if (bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04) {
         // Verificar se contém word/_rels/document.xml.rels no base64
         const base64Lower = base64.toLowerCase();
-        if (base64Lower.includes('word/_rels/document.xml.rels') || 
-            base64Lower.includes('word/document.xml')) {
+        if (base64Lower.includes('word/_rels/document.xml.rels') ||
+          base64Lower.includes('word/document.xml')) {
           return { tipo: 'DOCX', extensao: 'docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
         }
         // XLSX também é ZIP
-        if (base64Lower.includes('xl/_rels/workbook.xml.rels') || 
-            base64Lower.includes('xl/workbook.xml')) {
+        if (base64Lower.includes('xl/_rels/workbook.xml.rels') ||
+          base64Lower.includes('xl/workbook.xml')) {
           return { tipo: 'XLSX', extensao: 'xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
         }
         // PPTX também é ZIP
-        if (base64Lower.includes('ppt/_rels/presentation.xml.rels') || 
-            base64Lower.includes('ppt/presentation.xml')) {
+        if (base64Lower.includes('ppt/_rels/presentation.xml.rels') ||
+          base64Lower.includes('ppt/presentation.xml')) {
           return { tipo: 'PPTX', extensao: 'pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
         }
       }
@@ -313,7 +313,7 @@ function DocumentoMessage({
   const calcularTamanho = (base64: string): string => {
     // Tamanho aproximado: base64 é ~33% maior que o binário original
     const tamanhoBytes = (base64.length * 3) / 4;
-    
+
     if (tamanhoBytes < 1024) {
       return `${Math.round(tamanhoBytes)} B`;
     } else if (tamanhoBytes < 1024 * 1024) {
@@ -442,7 +442,7 @@ export default function MensagensPage() {
   }
   const [logs, setLogs] = useState<LogItem[]>([]);
   const logsChannelRef = useRef<RealtimeChannel | null>(null);
-  
+
   // Estado para modal de visualização de imagem
   const [imagemModal, setImagemModal] = useState<{
     src: string;
@@ -453,7 +453,7 @@ export default function MensagensPage() {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  
+
   // Estado para modal de lista de atendimentos/agendamentos
   const [listaModal, setListaModal] = useState<{
     isOpen: boolean;
@@ -485,12 +485,12 @@ export default function MensagensPage() {
       }
       originalWarn.apply(console, args);
     };
-    
+
     if (containerRef.current) {
       // Prevenir scroll automático
-      containerRef.current.scrollIntoView = () => {};
+      containerRef.current.scrollIntoView = () => { };
     }
-    
+
     return () => {
       console.warn = originalWarn;
     };
@@ -594,7 +594,7 @@ export default function MensagensPage() {
           mensagensContainerRef.current.scrollTop = mensagensContainerRef.current.scrollHeight;
         }
       }, 100);
-      
+
       return () => clearTimeout(timeoutId);
     }
   }, [clienteSelecionado, loadingMensagens, timelineItems.length]);
@@ -621,11 +621,11 @@ export default function MensagensPage() {
     try {
       const hoje = new Date();
       const dataMsg = new Date(data);
-      
+
       // Resetar horas para comparar apenas as datas
       const hojeSemHora = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
       const dataMsgSemHora = new Date(dataMsg.getFullYear(), dataMsg.getMonth(), dataMsg.getDate());
-      
+
       const diffTime = hojeSemHora.getTime() - dataMsgSemHora.getTime();
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
@@ -657,7 +657,7 @@ export default function MensagensPage() {
     for (let i = 0; i < clienteId.length; i++) {
       hash = clienteId.charCodeAt(i) + ((hash << 5) - hash);
     }
-    
+
     // Cores pré-definidas bonitas e contrastantes
     const colors = [
       '#8B5CF6', // purple-500
@@ -676,15 +676,15 @@ export default function MensagensPage() {
       '#22C55E', // green-500
       '#0EA5E9', // sky-500
     ];
-    
+
     const index = Math.abs(hash) % colors.length;
     return colors[index];
   };
 
   // Componente de Avatar reutilizável
-  const ClienteAvatar = ({ clienteId, nome, fotoPerfil, tamanho = 'md' }: { 
-    clienteId: string; 
-    nome: string; 
+  const ClienteAvatar = ({ clienteId, nome, fotoPerfil, tamanho = 'md' }: {
+    clienteId: string;
+    nome: string;
     fotoPerfil?: string;
     tamanho?: 'sm' | 'md' | 'lg';
   }) => {
@@ -693,11 +693,11 @@ export default function MensagensPage() {
       md: 'w-10 h-10 text-sm',
       lg: 'w-12 h-12 text-lg',
     };
-    
+
     const tamanhoClasse = tamanhos[tamanho];
     const cor = getClienteColor(clienteId);
     const inicial = nome.charAt(0).toUpperCase();
-    
+
     // Filtrar URLs do WhatsApp - evita tentar carregar imagens que retornariam 403
     const fotoValida = filterWhatsAppUrl(fotoPerfil);
 
@@ -712,7 +712,7 @@ export default function MensagensPage() {
     }
 
     return (
-      <div 
+      <div
         className={`${tamanhoClasse} rounded-full flex items-center justify-center text-white font-semibold`}
         style={{ backgroundColor: cor }}
       >
@@ -743,64 +743,64 @@ export default function MensagensPage() {
     try {
       const clienteIds = new Set<string>();
       const agendamentoStatusMap = new Map<string, string>();
-      
+
       if (usuario?.tipo_marcacao === 'agendamento') {
-          const { data: agendamentos, error } = await supabase
-            .from('agendamentos')
-            .select('cliente_id, status, updated_at')
-            .eq('usuario_id', user.id)
-            .order('updated_at', { ascending: false });
-          
-          if (error) {
-            console.error('Erro ao buscar agendamentos:', error);
-            return;
-          }
-          
-          if (agendamentos && agendamentos.length > 0) {
-            // Agrupar por cliente_id e pegar o mais recente de cada um
-            const agendamentosPorCliente = new Map<string, any>();
-            
-            agendamentos.forEach((a: any) => {
-              if (a.cliente_id) {
-                const existing = agendamentosPorCliente.get(a.cliente_id);
-                const currentUpdatedAt = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-                const existingUpdatedAt = existing?.updated_at ? new Date(existing.updated_at).getTime() : 0;
-                
-                if (!existing || currentUpdatedAt > existingUpdatedAt) {
-                  agendamentosPorCliente.set(a.cliente_id, a);
-                }
+        const { data: agendamentos, error } = await supabase
+          .from('agendamentos')
+          .select('cliente_id, status, updated_at')
+          .eq('usuario_id', user.id)
+          .order('updated_at', { ascending: false });
+
+        if (error) {
+          console.error('Erro ao buscar agendamentos:', error);
+          return;
+        }
+
+        if (agendamentos && agendamentos.length > 0) {
+          // Agrupar por cliente_id e pegar o mais recente de cada um
+          const agendamentosPorCliente = new Map<string, any>();
+
+          agendamentos.forEach((a: any) => {
+            if (a.cliente_id) {
+              const existing = agendamentosPorCliente.get(a.cliente_id);
+              const currentUpdatedAt = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+              const existingUpdatedAt = existing?.updated_at ? new Date(existing.updated_at).getTime() : 0;
+
+              if (!existing || currentUpdatedAt > existingUpdatedAt) {
+                agendamentosPorCliente.set(a.cliente_id, a);
               }
-            });
-            
-            agendamentosPorCliente.forEach((a: any, clienteId: string) => {
-              clienteIds.add(clienteId);
-              // Mapear status: 'agendado' -> 'Agendado', 'confirmado' -> 'Agendado', 'concluido' -> 'Realizado', 'cancelado' -> 'Cancelado'
-              let statusDisplay = 'Agendado';
-              const statusLower = String(a.status || '').toLowerCase().trim();
-              
-              if (statusLower === 'concluido' || statusLower === 'realizado') {
-                statusDisplay = 'Realizado';
-              } else if (statusLower === 'cancelado') {
-                statusDisplay = 'Cancelado';
-              } else if (statusLower === 'agendado' || statusLower === 'confirmado') {
-                statusDisplay = 'Agendado';
-              }
-              
-              agendamentoStatusMap.set(clienteId, statusDisplay);
-            });
-          }
+            }
+          });
+
+          agendamentosPorCliente.forEach((a: any, clienteId: string) => {
+            clienteIds.add(clienteId);
+            // Mapear status: 'agendado' -> 'Agendado', 'confirmado' -> 'Agendado', 'concluido' -> 'Realizado', 'cancelado' -> 'Cancelado'
+            let statusDisplay = 'Agendado';
+            const statusLower = String(a.status || '').toLowerCase().trim();
+
+            if (statusLower === 'concluido' || statusLower === 'realizado') {
+              statusDisplay = 'Realizado';
+            } else if (statusLower === 'cancelado') {
+              statusDisplay = 'Cancelado';
+            } else if (statusLower === 'agendado' || statusLower === 'confirmado') {
+              statusDisplay = 'Agendado';
+            }
+
+            agendamentoStatusMap.set(clienteId, statusDisplay);
+          });
+        }
       } else {
         const { getConnectedInstances } = await import('@/lib/api/whatsapp');
         const connectedInstances = await getConnectedInstances(user.id);
         const instanceIds = connectedInstances.map(inst => inst.id);
-        
+
         if (instanceIds.length > 0) {
           const { data: atendimentos } = await supabase
             .from('atendimentos_solicitado')
             .select('cliente_id')
             .eq('usuario_id', user.id)
             .in('whatsapp_instance_id', instanceIds);
-          
+
           if (atendimentos) {
             atendimentos.forEach((a: any) => {
               if (a.cliente_id) clienteIds.add(a.cliente_id);
@@ -808,10 +808,10 @@ export default function MensagensPage() {
           }
         }
       }
-      
+
       setClientesComAtendimento(clienteIds);
       setClientesAgendamentoStatus(agendamentoStatusMap);
-      
+
       // Atualizar cache
       clientesComAtendimentoCacheRef.current = {
         timestamp: Date.now(),
@@ -877,7 +877,7 @@ export default function MensagensPage() {
                 } else if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
                   mimeType = 'audio/wav';
                 } else if ((bytes[0] === 0xFF && (bytes[1] === 0xFB || bytes[1] === 0xF3)) ||
-                          (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33)) {
+                  (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33)) {
                   mimeType = 'audio/mpeg';
                 }
               } catch (e) {
@@ -951,7 +951,7 @@ export default function MensagensPage() {
 
     // Configurar subscription realtime para atualizar quando houver mudanças
     // Usar nome estável do canal para evitar múltiplas subscriptions
-    const channelName = usuario.tipo_marcacao === 'agendamento' 
+    const channelName = usuario.tipo_marcacao === 'agendamento'
       ? `mensagens-agendamentos-status:${user.id}`
       : `mensagens-atendimentos-status:${user.id}`;
 
@@ -967,15 +967,15 @@ export default function MensagensPage() {
         },
         (payload) => {
           if (!isMounted) return;
-          
+
           // Invalidar cache quando houver mudanças
           clientesComAtendimentoCacheRef.current = null;
-          
+
           // Debounce para evitar múltiplas chamadas rápidas
           if (loadClientesComAtendimentoTimeoutRef.current) {
             clearTimeout(loadClientesComAtendimentoTimeoutRef.current);
           }
-          
+
           loadClientesComAtendimentoTimeoutRef.current = setTimeout(() => {
             // Usar ref para evitar dependência circular
             if (loadClientesComAtendimentoRef.current) {
@@ -1008,7 +1008,7 @@ export default function MensagensPage() {
       // Buscar todos os atendimentos do cliente
       const connectedInstances = await getConnectedInstances(userId);
       const instanceIds = connectedInstances.map(inst => inst.id);
-      
+
       if (instanceIds.length > 0) {
         const { data: atendimentos } = await supabase
           .from('atendimentos_solicitado')
@@ -1073,7 +1073,7 @@ export default function MensagensPage() {
       setAtendimentoAtual('ia');
       return;
     }
-    
+
     // Buscar atendimento_atual do cliente atual da lista
     const clienteAtualDaLista = clientes.find(c => c.id === clienteSelecionado);
     if (clienteAtualDaLista?.atendimento_atual) {
@@ -1087,7 +1087,7 @@ export default function MensagensPage() {
             .select('atendimento_atual')
             .eq('id', clienteSelecionado)
             .single();
-          
+
           if (!error && data?.atendimento_atual) {
             setAtendimentoAtual(data.atendimento_atual as 'ia' | 'humano' | 'pausa');
           } else {
@@ -1098,7 +1098,7 @@ export default function MensagensPage() {
           setAtendimentoAtual('ia');
         }
       }
-      
+
       buscarAtendimentoAtual();
     }
   }, [clienteSelecionado, clientes]);
@@ -1110,7 +1110,7 @@ export default function MensagensPage() {
       setHasAtendimento(false);
       setHasAgendamento(false);
       setAtendimentoId(null);
-      
+
       // Limpar subscription se existir
       if (logsChannelRef.current) {
         supabase.removeChannel(logsChannelRef.current);
@@ -1185,22 +1185,22 @@ export default function MensagensPage() {
 
   const handleOpenDetalhes = async () => {
     if (!clienteSelecionado || !user?.id) return;
-    
+
     try {
       if (usuario?.tipo_marcacao === 'agendamento') {
         const agendamentos = await getAllAgendamentosByCliente(clienteSelecionado, user.id);
-        
+
         if (agendamentos.length === 0) {
           return;
         }
-        
+
         // Se houver apenas 1, abrir diretamente
         if (agendamentos.length === 1) {
           setAtendimentoId(agendamentos[0].id);
           setIsSidebarOpen(true);
           return;
         }
-        
+
         // Se houver mais de 1, mostrar lista
         const items = agendamentos.map(ag => ({
           id: ag.id,
@@ -1209,22 +1209,22 @@ export default function MensagensPage() {
           status: ag.status || 'agendado',
           resumo_conversa: ag.resumo_conversa,
         }));
-        
+
         setListaModal({ isOpen: true, items });
       } else {
         const atendimentos = await getAllAtendimentosByCliente(clienteSelecionado, user.id);
-        
+
         if (atendimentos.length === 0) {
           return;
         }
-        
+
         // Se houver apenas 1, abrir diretamente
         if (atendimentos.length === 1) {
           setAtendimentoId(atendimentos[0].id);
           setIsSidebarOpen(true);
           return;
         }
-        
+
         // Se houver mais de 1, mostrar lista
         const items = atendimentos.map(at => ({
           id: at.id,
@@ -1233,7 +1233,7 @@ export default function MensagensPage() {
           status: at.status || 'aberto',
           resumo_conversa: at.resumo_conversa,
         }));
-        
+
         setListaModal({ isOpen: true, items });
       }
     } catch (error) {
@@ -1252,10 +1252,10 @@ export default function MensagensPage() {
     try {
       const hoje = new Date();
       const dataItem = new Date(data);
-      
+
       const hojeSemHora = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
       const dataItemSemHora = new Date(dataItem.getFullYear(), dataItem.getMonth(), dataItem.getDate());
-      
+
       const diffTime = hojeSemHora.getTime() - dataItemSemHora.getTime();
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
@@ -1302,7 +1302,7 @@ export default function MensagensPage() {
   // Handler para atualizar atendimento_atual
   const handleAtualizarAtendimento = async (tipo: 'ia' | 'humano' | 'pausa') => {
     if (!clienteSelecionado || !user?.id || atualizandoAtendimento) return;
-    
+
     setAtualizandoAtendimento(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -1329,7 +1329,7 @@ export default function MensagensPage() {
       }
 
       setAtendimentoAtual(tipo);
-      
+
       // Atualizar a lista de clientes para refletir a mudança
       refetchClientes();
     } catch (err: any) {
@@ -1341,7 +1341,7 @@ export default function MensagensPage() {
   };
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="flex h-[calc(100vh-5rem)] w-[calc(100%-18rem)] fixed top-20 left-72 right-0 bottom-0 bg-[#E8F4F8] overflow-hidden"
     >
@@ -1387,7 +1387,7 @@ export default function MensagensPage() {
                     <div className="flex items-start gap-3">
                       {/* Avatar */}
                       <div className="flex-shrink-0">
-                        <ClienteAvatar 
+                        <ClienteAvatar
                           clienteId={cliente.id}
                           nome={cliente.nome}
                           fotoPerfil={cliente.foto_perfil}
@@ -1403,21 +1403,20 @@ export default function MensagensPage() {
                           </h3>
                           <div className="flex items-center gap-2 ml-2 flex-shrink-0">
                             {clientesComAtendimento.has(cliente.id) && (
-                              <span className={`px-1.5 py-0.5 text-xs font-medium rounded-md ${
-                                usuario?.tipo_marcacao === 'agendamento' 
+                              <span className={`px-1.5 py-0.5 text-xs font-medium rounded-md ${usuario?.tipo_marcacao === 'agendamento'
                                   ? (() => {
-                                      const status = clientesAgendamentoStatus.get(cliente.id);
-                                      if (status === 'Realizado') {
-                                        return 'bg-green-100 text-green-700';
-                                      } else if (status === 'Cancelado') {
-                                        return 'bg-red-100 text-red-700';
-                                      } else {
-                                        return 'bg-blue-100 text-blue-700';
-                                      }
-                                    })()
+                                    const status = clientesAgendamentoStatus.get(cliente.id);
+                                    if (status === 'Realizado') {
+                                      return 'bg-green-100 text-green-700';
+                                    } else if (status === 'Cancelado') {
+                                      return 'bg-red-100 text-red-700';
+                                    } else {
+                                      return 'bg-blue-100 text-blue-700';
+                                    }
+                                  })()
                                   : 'bg-primary-100 text-primary-700'
-                              }`}>
-                                {usuario?.tipo_marcacao === 'agendamento' 
+                                }`}>
+                                {usuario?.tipo_marcacao === 'agendamento'
                                   ? (clientesAgendamentoStatus.get(cliente.id) || 'Agendado')
                                   : 'Atendimento'}
                               </span>
@@ -1470,7 +1469,7 @@ export default function MensagensPage() {
             {/* Header do Chat */}
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <ClienteAvatar 
+                <ClienteAvatar
                   clienteId={clienteAtual.id}
                   nome={clienteAtual.nome}
                   fotoPerfil={clienteAtual.foto_perfil}
@@ -1492,67 +1491,63 @@ export default function MensagensPage() {
                   <button
                     onClick={() => handleAtualizarAtendimento('ia')}
                     disabled={atualizandoAtendimento}
-                    className={`p-2 rounded-lg transition-all ${
-                      atendimentoAtual === 'ia'
+                    className={`p-2 rounded-lg transition-all ${atendimentoAtual === 'ia'
                         ? 'bg-purple-100 text-purple-600'
                         : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-                    } ${atualizandoAtendimento ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      } ${atualizandoAtendimento ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                     title="Ativar IA"
                   >
                     <Bot className="w-5 h-5" />
                   </button>
-                  
+
                   {/* Ícone Humano */}
                   <button
                     onClick={() => handleAtualizarAtendimento('humano')}
                     disabled={atualizandoAtendimento}
-                    className={`p-2 rounded-lg transition-all ${
-                      atendimentoAtual === 'humano'
+                    className={`p-2 rounded-lg transition-all ${atendimentoAtual === 'humano'
                         ? 'bg-blue-100 text-blue-600'
                         : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-                    } ${atualizandoAtendimento ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      } ${atualizandoAtendimento ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                     title="Humano assumir conversa"
                   >
                     <User className="w-5 h-5" />
                   </button>
-                  
+
                   {/* Ícone Pausa */}
                   <button
                     onClick={() => handleAtualizarAtendimento('pausa')}
                     disabled={atualizandoAtendimento}
-                    className={`p-2 rounded-lg transition-all ${
-                      atendimentoAtual === 'pausa'
+                    className={`p-2 rounded-lg transition-all ${atendimentoAtual === 'pausa'
                         ? 'bg-yellow-100 text-yellow-600'
                         : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-                    } ${atualizandoAtendimento ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      } ${atualizandoAtendimento ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                     title="Pausar atendimento da IA"
                   >
                     <Pause className="w-5 h-5" />
                   </button>
                 </div>
-                
+
                 {(hasAtendimento || hasAgendamento) && (
-                  <span className={`px-2 py-1 text-xs font-medium rounded-md ${
-                    usuario?.tipo_marcacao === 'agendamento' 
+                  <span className={`px-2 py-1 text-xs font-medium rounded-md ${usuario?.tipo_marcacao === 'agendamento'
                       ? (() => {
-                          const status = clientesAgendamentoStatus.get(clienteAtual.id);
-                          if (status === 'Realizado') {
-                            return 'bg-green-100 text-green-700';
-                          } else if (status === 'Cancelado') {
-                            return 'bg-red-100 text-red-700';
-                          } else {
-                            return 'bg-blue-100 text-blue-700';
-                          }
-                        })()
+                        const status = clientesAgendamentoStatus.get(clienteAtual.id);
+                        if (status === 'Realizado') {
+                          return 'bg-green-100 text-green-700';
+                        } else if (status === 'Cancelado') {
+                          return 'bg-red-100 text-red-700';
+                        } else {
+                          return 'bg-blue-100 text-blue-700';
+                        }
+                      })()
                       : 'bg-primary-100 text-primary-700'
-                  }`}>
-                    {usuario?.tipo_marcacao === 'agendamento' 
+                    }`}>
+                    {usuario?.tipo_marcacao === 'agendamento'
                       ? (clientesAgendamentoStatus.get(clienteAtual.id) || 'Agendado')
                       : 'Atendimento'}
                   </span>
                 )}
                 {(hasAtendimento || hasAgendamento) && (
-                  <button 
+                  <button
                     onClick={handleOpenDetalhes}
                     className="text-gray-600 hover:text-gray-900"
                   >
@@ -1567,7 +1562,7 @@ export default function MensagensPage() {
             {/* Área de Mensagens */}
             <div className="flex-1 flex flex-col min-h-0 relative">
               {/* Container de scroll para mensagens */}
-              <div 
+              <div
                 ref={mensagensContainerRef}
                 className="flex-1 overflow-y-auto px-6 py-4 space-y-4 scrollbar-hide"
               >
@@ -1586,16 +1581,16 @@ export default function MensagensPage() {
                       // Se for um log, renderizar componente de log
                       if (item.tipo === 'log' && item.log) {
                         const log = item.log;
-                        
+
                         // Formatar data: "Hoje 17:44" ou "27/01/2025 17:44"
                         const formatarDataLog = (data: string) => {
                           try {
                             const hoje = new Date();
                             const dataLog = new Date(data);
-                            
+
                             const hojeSemHora = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
                             const dataLogSemHora = new Date(dataLog.getFullYear(), dataLog.getMonth(), dataLog.getDate());
-                            
+
                             const diffTime = hojeSemHora.getTime() - dataLogSemHora.getTime();
                             const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
@@ -1637,7 +1632,7 @@ export default function MensagensPage() {
 
                         return (
                           <div key={item.id} className="flex justify-center my-4">
-                            <div 
+                            <div
                               onClick={() => handleLogClick(log.id, log.tipo)}
                               className="flex items-center justify-between gap-4 text-sm px-4 py-2 bg-[#1e293b] rounded-lg w-full max-w-4xl cursor-pointer hover:bg-[#334155] transition-colors"
                             >
@@ -1661,168 +1656,167 @@ export default function MensagensPage() {
 
                       // Se for uma mensagem, renderizar normalmente
                       const mensagem = item.mensagem!;
-                      
+
                       // Verificar se há imagem (ignorar "EMPTY" e strings vazias)
-                      const base64ImagemValido = mensagem.base64_imagem && 
-                     mensagem.base64_imagem.trim() !== '' && 
-                     mensagem.base64_imagem.trim().toUpperCase() !== 'EMPTY';
+                      const base64ImagemValido = mensagem.base64_imagem &&
+                        mensagem.base64_imagem.trim() !== '' &&
+                        mensagem.base64_imagem.trim().toUpperCase() !== 'EMPTY';
                       const temImagem = !!base64ImagemValido;
-                      
+
                       // Verificar se há áudio (ignorar "EMPTY" e strings vazias)
-                      const base64AudioValido = mensagem.base64_audio && 
-                     typeof mensagem.base64_audio === 'string' &&
-                     mensagem.base64_audio.trim() !== '' && 
-                     mensagem.base64_audio.trim().toUpperCase() !== 'EMPTY'
-                     ? mensagem.base64_audio.trim()
-                     : null;
+                      const base64AudioValido = mensagem.base64_audio &&
+                        typeof mensagem.base64_audio === 'string' &&
+                        mensagem.base64_audio.trim() !== '' &&
+                        mensagem.base64_audio.trim().toUpperCase() !== 'EMPTY'
+                        ? mensagem.base64_audio.trim()
+                        : null;
                       const temAudio = !!base64AudioValido;
-                      
+
                       // Verificar se há documento (ignorar "EMPTY", "NULL" e strings vazias)
-                      const base64DocumentoValido = mensagem.base64_documento && 
-                     typeof mensagem.base64_documento === 'string' &&
-                     mensagem.base64_documento.trim() !== '' && 
-                     mensagem.base64_documento.trim().toUpperCase() !== 'EMPTY' &&
-                     mensagem.base64_documento.trim().toUpperCase() !== 'NULL'
-                     ? mensagem.base64_documento.trim()
-                     : null;
+                      const base64DocumentoValido = mensagem.base64_documento &&
+                        typeof mensagem.base64_documento === 'string' &&
+                        mensagem.base64_documento.trim() !== '' &&
+                        mensagem.base64_documento.trim().toUpperCase() !== 'EMPTY' &&
+                        mensagem.base64_documento.trim().toUpperCase() !== 'NULL'
+                        ? mensagem.base64_documento.trim()
+                        : null;
                       const temDocumento = !!base64DocumentoValido;
-                      
+
                       const temTexto = mensagem.conteudo && mensagem.conteudo.trim() !== '';
                       const dataUriImagem = temImagem ? `data:image/jpeg;base64,${mensagem.base64_imagem}` : null;
-                      
+
                       // Detectar formato do áudio baseado no header do base64
                       const detectarFormatoAudio = (base64: string | null): string => {
-                     if (!base64 || typeof base64 !== 'string') return 'audio/ogg; codecs=opus';
-                     
-                     // Decodificar os primeiros bytes para identificar o formato
-                     try {
-                       const binaryString = atob(base64.substring(0, 20));
-                       const bytes = new Uint8Array(binaryString.length);
-                       for (let i = 0; i < binaryString.length; i++) {
-                         bytes[i] = binaryString.charCodeAt(i);
-                       }
-                       
-                       // OGG (Opus) - começa com "OggS"
-                       if (bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
-                         return 'audio/ogg; codecs=opus';
-                       }
-                       // WAV - começa com "RIFF"
-                       if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
-                         return 'audio/wav';
-                       }
-                       // MP3 - pode começar com ID3 ou FF FB/FF F3
-                       if ((bytes[0] === 0xFF && (bytes[1] === 0xFB || bytes[1] === 0xF3)) ||
-                           (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33)) {
-                         return 'audio/mpeg';
-                       }
-                     } catch (e) {
-                       console.warn('Erro ao detectar formato de áudio:', e);
-                     }
-                     
-                     // Fallback: tentar OGG primeiro (formato mais comum do WhatsApp)
-                     return 'audio/ogg; codecs=opus';
+                        if (!base64 || typeof base64 !== 'string') return 'audio/ogg; codecs=opus';
+
+                        // Decodificar os primeiros bytes para identificar o formato
+                        try {
+                          const binaryString = atob(base64.substring(0, 20));
+                          const bytes = new Uint8Array(binaryString.length);
+                          for (let i = 0; i < binaryString.length; i++) {
+                            bytes[i] = binaryString.charCodeAt(i);
+                          }
+
+                          // OGG (Opus) - começa com "OggS"
+                          if (bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
+                            return 'audio/ogg; codecs=opus';
+                          }
+                          // WAV - começa com "RIFF"
+                          if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+                            return 'audio/wav';
+                          }
+                          // MP3 - pode começar com ID3 ou FF FB/FF F3
+                          if ((bytes[0] === 0xFF && (bytes[1] === 0xFB || bytes[1] === 0xF3)) ||
+                            (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33)) {
+                            return 'audio/mpeg';
+                          }
+                        } catch (e) {
+                          console.warn('Erro ao detectar formato de áudio:', e);
+                        }
+
+                        // Fallback: tentar OGG primeiro (formato mais comum do WhatsApp)
+                        return 'audio/ogg; codecs=opus';
                       };
-                      
+
                       const dataUriAudio = temAudio && base64AudioValido && typeof base64AudioValido === 'string'
-                        ? `data:${detectarFormatoAudio(base64AudioValido)};base64,${base64AudioValido}` 
+                        ? `data:${detectarFormatoAudio(base64AudioValido)};base64,${base64AudioValido}`
                         : null;
 
                       return (
-                     <div
-                       key={mensagem.id}
-                       className={`flex ${mensagem.isCliente ? 'justify-start' : 'justify-end'}`}
-                     >
-                       <div className={`max-w-[70%] flex items-end gap-2 ${mensagem.isCliente ? 'flex-row' : 'flex-row-reverse'}`}>
                         <div
-                          className={`rounded-2xl px-4 py-2 ${
-                            mensagem.isCliente
-                              ? 'bg-gray-800 text-white'
-                              : mensagem.isHumano
-                                ? 'bg-primary-600 text-white'
-                                : 'bg-gray-100 text-gray-900'
-                          }`}
+                          key={mensagem.id}
+                          className={`flex ${mensagem.isCliente ? 'justify-start' : 'justify-end'}`}
                         >
-                           {/* Exibir imagem se houver */}
-                           {temImagem && dataUriImagem && (
-                             <div className="mb-2">
-                               <img
-                                 src={dataUriImagem}
-                                 alt="Imagem da mensagem"
-                                 className="rounded-lg cursor-pointer object-cover"
-                                 style={{
-                                   maxWidth: '700px',
-                                   maxHeight: '600px',
-                                   width: 'auto',
-                                   height: 'auto',
-                                 }}
-                                onClick={() => {
-                                  setImagemModal({
-                                    src: dataUriImagem,
-                                    remetente: mensagem.isCliente ? clienteAtual?.nome || 'Cliente' : (mensagem.isHumano ? 'Você' : 'Assistente'),
-                                    dataHora: formatarDataHora(mensagem.created_at),
-                                  });
-                                   setZoom(1);
-                                   setPosition({ x: 0, y: 0 });
-                                 }}
-                               />
-                             </div>
-                           )}
+                          <div className={`max-w-[70%] flex items-end gap-2 ${mensagem.isCliente ? 'flex-row' : 'flex-row-reverse'}`}>
+                            <div
+                              className={`rounded-2xl px-4 py-2 ${mensagem.isCliente
+                                  ? 'bg-gray-800 text-white'
+                                  : mensagem.isHumano
+                                    ? 'bg-primary-600 text-white'
+                                    : 'bg-gray-100 text-gray-900'
+                                }`}
+                            >
+                              {/* Exibir imagem se houver */}
+                              {temImagem && dataUriImagem && (
+                                <div className="mb-2">
+                                  <img
+                                    src={dataUriImagem}
+                                    alt="Imagem da mensagem"
+                                    className="rounded-lg cursor-pointer object-cover"
+                                    style={{
+                                      maxWidth: '700px',
+                                      maxHeight: '600px',
+                                      width: 'auto',
+                                      height: 'auto',
+                                    }}
+                                    onClick={() => {
+                                      setImagemModal({
+                                        src: dataUriImagem,
+                                        remetente: mensagem.isCliente ? clienteAtual?.nome || 'Cliente' : (mensagem.isHumano ? 'Você' : 'Assistente'),
+                                        dataHora: formatarDataHora(mensagem.created_at),
+                                      });
+                                      setZoom(1);
+                                      setPosition({ x: 0, y: 0 });
+                                    }}
+                                  />
+                                </div>
+                              )}
 
-                           {/* Exibir áudio se houver - Player customizado estilo WhatsApp */}
-                           {temAudio && base64AudioValido && clienteAtual && (
-                             <div className="mb-2">
-                               <AudioPlayerWhatsApp
-                                 audioSrc={dataUriAudio!}
-                                 clienteId={clienteAtual.id}
-                                 clienteNome={clienteAtual.nome}
-                                 clienteFotoPerfil={clienteAtual.foto_perfil}
-                                 getClienteColor={getClienteColor}
-                               />
-                             </div>
-                           )}
+                              {/* Exibir áudio se houver - Player customizado estilo WhatsApp */}
+                              {temAudio && base64AudioValido && clienteAtual && (
+                                <div className="mb-2">
+                                  <AudioPlayerWhatsApp
+                                    audioSrc={dataUriAudio!}
+                                    clienteId={clienteAtual.id}
+                                    clienteNome={clienteAtual.nome}
+                                    clienteFotoPerfil={clienteAtual.foto_perfil}
+                                    getClienteColor={getClienteColor}
+                                  />
+                                </div>
+                              )}
 
-                           {/* Exibir documento se houver - Estilo WhatsApp */}
-                           {temDocumento && base64DocumentoValido && (
-                             <div className="mb-2">
-                               <DocumentoMessage
-                                 base64Documento={base64DocumentoValido}
-                                 isCliente={mensagem.isCliente}
-                               />
-                             </div>
-                           )}
-                           
-                           {/* Exibir texto se houver */}
-                           {temTexto && (
-                             <p className="text-sm whitespace-pre-wrap break-words">
-                               {mensagem.conteudo}
-                             </p>
-                           )}
+                              {/* Exibir documento se houver - Estilo WhatsApp */}
+                              {temDocumento && base64DocumentoValido && (
+                                <div className="mb-2">
+                                  <DocumentoMessage
+                                    base64Documento={base64DocumentoValido}
+                                    isCliente={mensagem.isCliente}
+                                  />
+                                </div>
+                              )}
 
-                           {/* Mensagem vazia (apenas mídia) */}
-                           {!temTexto && !temImagem && !temAudio && !temDocumento && (
-                             <p className="text-sm text-gray-400 italic">
-                               Mensagem sem conteúdo
-                             </p>
-                           )}
-                         </div>
-                         <div className={`flex items-center gap-1.5 pb-1 ${mensagem.isCliente ? 'justify-start' : 'justify-end'}`}>
-                           {!mensagem.isCliente && (
-                             <span className={`flex-shrink-0 p-0.5 rounded ${mensagem.isHumano ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`} title={mensagem.isHumano ? 'Humano' : 'IA'}>
-                               {mensagem.isHumano ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
-                             </span>
-                           )}
-                           <p className={`text-xs text-gray-500 ${mensagem.isCliente ? 'text-left' : 'text-right'}`}>
-                             {formatarDataHora(mensagem.created_at)}
-                           </p>
-                         </div>
-                       </div>
-                     </div>
-                   );
-                 })}
+                              {/* Exibir texto se houver */}
+                              {temTexto && (
+                                <p className="text-sm whitespace-pre-wrap break-words">
+                                  {mensagem.conteudo}
+                                </p>
+                              )}
+
+                              {/* Mensagem vazia (apenas mídia) */}
+                              {!temTexto && !temImagem && !temAudio && !temDocumento && (
+                                <p className="text-sm text-gray-400 italic">
+                                  Mensagem sem conteúdo
+                                </p>
+                              )}
+                            </div>
+                            <div className={`flex items-center gap-1.5 pb-1 ${mensagem.isCliente ? 'justify-start' : 'justify-end'}`}>
+                              {!mensagem.isCliente && (
+                                <span className={`flex-shrink-0 p-0.5 rounded ${mensagem.isHumano ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`} title={mensagem.isHumano ? 'Humano' : 'IA'}>
+                                  {mensagem.isHumano ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
+                                </span>
+                              )}
+                              <p className={`text-xs text-gray-500 ${mensagem.isCliente ? 'text-left' : 'text-right'}`}>
+                                {formatarDataHora(mensagem.created_at)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </>
                 )}
               </div>
-              
+
             </div>
           </>
         ) : (
@@ -1842,7 +1836,7 @@ export default function MensagensPage() {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
       />
-      
+
       {/* Modal de Visualização de Imagem */}
       {imagemModal && (
         <div
@@ -1859,7 +1853,7 @@ export default function MensagensPage() {
             <p className="text-sm font-medium">{imagemModal.remetente}</p>
             <p className="text-xs text-gray-300">{imagemModal.dataHora}</p>
           </div>
-          
+
           {/* Header - Canto Superior Direito */}
           <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
             {/* Botão Zoom In */}
@@ -1873,7 +1867,7 @@ export default function MensagensPage() {
             >
               <ZoomIn className="w-5 h-5" />
             </button>
-            
+
             {/* Botão Zoom Out */}
             <button
               onClick={(e) => {
@@ -1885,7 +1879,7 @@ export default function MensagensPage() {
             >
               <ZoomOut className="w-5 h-5" />
             </button>
-            
+
             {/* Botão Download */}
             <button
               onClick={(e) => {
@@ -1902,7 +1896,7 @@ export default function MensagensPage() {
             >
               <Download className="w-5 h-5" />
             </button>
-            
+
             {/* Botão Fechar */}
             <button
               onClick={(e) => {
@@ -1915,7 +1909,7 @@ export default function MensagensPage() {
               <X className="w-5 h-5" />
             </button>
           </div>
-          
+
           {/* Imagem com zoom e arrastar */}
           <div
             className="relative w-full h-full flex items-center justify-center overflow-hidden"
@@ -1972,10 +1966,10 @@ export default function MensagensPage() {
             listaModal.items.map((item) => {
               const statusBadge = formatarStatusLista(item.status, item.tipo);
               const dataFormatada = formatarDataLista(item.data);
-              const resumoPreview = item.resumo_conversa 
-                ? (item.resumo_conversa.length > 100 
-                    ? `${item.resumo_conversa.substring(0, 100)}...` 
-                    : item.resumo_conversa)
+              const resumoPreview = item.resumo_conversa
+                ? (item.resumo_conversa.length > 100
+                  ? `${item.resumo_conversa.substring(0, 100)}...`
+                  : item.resumo_conversa)
                 : '';
 
               return (
