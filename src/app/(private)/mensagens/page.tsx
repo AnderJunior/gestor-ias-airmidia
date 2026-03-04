@@ -509,7 +509,7 @@ export default function MensagensPage() {
     const ultimaHumano = [...mensagens].reverse().find((m) => {
       const remetente = (m.remetente || '').toLowerCase();
       const isHumano = remetente.includes('humano') || remetente === 'humano';
-      const conteudo = (m.mensagem || m.conteudo || '').trim();
+      const conteudo = (m.mensagem || '').trim();
       return isHumano && conteudo === txt;
     });
     if (ultimaHumano) setMensagemOtimista(null);
