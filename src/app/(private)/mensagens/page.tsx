@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useMensagensPorCliente, useClientesComConversas } from '@/hooks/useMensagensPorCliente';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Search, Check, Play, Pause, Mic, ZoomIn, ZoomOut, Download, X, File, Image as ImageIcon, Bot, User } from 'lucide-react';
+import { Search, Check, Play, Pause, Mic, ZoomIn, ZoomOut, Download, X, File, Image as ImageIcon, Bot, User, Send } from 'lucide-react';
 import { MensagemConversa } from '@/lib/api/mensagens';
 import { getAtendimentoByCliente, getAllAtendimentosByCliente } from '@/lib/api/atendimentos';
 import { getAgendamentoByCliente, getAllAgendamentosByCliente } from '@/lib/api/agendamentos';
@@ -17,6 +17,9 @@ import { AtendimentoSidebar } from '@/app/(private)/atendimento/components/Atend
 import { supabase } from '@/lib/supabaseClient';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { filterWhatsAppUrl } from '@/lib/utils/images';
+
+// Layout de envio de mensagem - altere para true para reativar
+const ENVIO_MENSAGEM_HABILITADO = false;
 
 interface MensagemExibicao {
   id: string;
@@ -423,7 +426,10 @@ export default function MensagensPage() {
   const [hasAgendamento, setHasAgendamento] = useState(false);
   const { clientes, loading: loadingClientes, refetch: refetchClientes } = useClientesComConversas();
   const [duracaoAudios, setDuracaoAudios] = useState<Map<string, number>>(new Map());
-  const { mensagens, loading: loadingMensagens } = useMensagensPorCliente(clienteSelecionado);
+  const { mensagens, loading: loadingMensagens, refetch: refetchMensagens } = useMensagensPorCliente(clienteSelecionado);
+  const [textoMensagem, setTextoMensagem] = useState('');
+  const [enviandoMensagem, setEnviandoMensagem] = useState(false);
+  const [mensagemOtimista, setMensagemOtimista] = useState<string | null>(null);
   const { usuario } = useUsuario();
   const { user } = useAuth();
   const [clientesComAtendimento, setClientesComAtendimento] = useState<Set<string>>(new Set());
@@ -496,6 +502,19 @@ export default function MensagensPage() {
     };
   }, []);
 
+  // Limpar mensagemOtimista quando realtime trazer a mensagem real (evita duplicata)
+  useEffect(() => {
+    if (!mensagemOtimista || !mensagens?.length) return;
+    const txt = mensagemOtimista.trim();
+    const ultimaHumano = [...mensagens].reverse().find((m) => {
+      const remetente = (m.remetente || '').toLowerCase();
+      const isHumano = remetente.includes('humano') || remetente === 'humano';
+      const conteudo = (m.mensagem || m.conteudo || '').trim();
+      return isHumano && conteudo === txt;
+    });
+    if (ultimaHumano) setMensagemOtimista(null);
+  }, [mensagens, mensagemOtimista]);
+
   // Ler parâmetro de query cliente_id e abrir conversa automaticamente (apenas na carga inicial)
   useEffect(() => {
     const clienteIdFromQuery = searchParams.get('cliente_id');
@@ -567,6 +586,22 @@ export default function MensagensPage() {
       });
     });
 
+    // Mensagem otimista (enviando) – aparece na hora
+    if (mensagemOtimista) {
+      items.push({
+        id: 'msg-optimistic',
+        tipo: 'mensagem',
+        data: new Date().toISOString(),
+        mensagem: {
+          id: 'optimistic',
+          conteudo: mensagemOtimista,
+          isCliente: false,
+          isHumano: true,
+          created_at: new Date().toISOString(),
+        },
+      });
+    }
+
     // Adicionar logs
     logs.forEach(log => {
       items.push({
@@ -583,7 +618,7 @@ export default function MensagensPage() {
       const dataB = new Date(b.data).getTime();
       return dataA - dataB;
     });
-  }, [mensagensExibicao, logs]);
+  }, [mensagensExibicao, logs, mensagemOtimista]);
 
   // Scroll automático para o final quando uma conversa é aberta ou mensagens são carregadas
   useEffect(() => {
@@ -1340,6 +1375,44 @@ export default function MensagensPage() {
     }
   };
 
+  const handleEnviarMensagem = async () => {
+    if (!clienteSelecionado || !textoMensagem.trim()) return;
+    const texto = textoMensagem.trim();
+    setTextoMensagem('');
+    setMensagemOtimista(texto);
+    setEnviandoMensagem(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setMensagemOtimista(null);
+        throw new Error('Não autenticado');
+      }
+      const response = await fetch('/api/whatsapp/enviar-mensagem', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          clienteId: clienteSelecionado,
+          mensagem: texto,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setMensagemOtimista(null);
+        const msg = data.details ? `${data.error}: ${data.details}` : (data.error || 'Erro ao enviar mensagem');
+        throw new Error(msg);
+      }
+      // Não refetchar: realtime atualiza automaticamente. Manter mensagemOtimista até o realtime trazer a mensagem real.
+    } catch (err: unknown) {
+      setMensagemOtimista(null);
+      alert(err instanceof Error ? err.message : 'Erro ao enviar mensagem. Tente novamente.');
+    } finally {
+      setEnviandoMensagem(false);
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -1685,36 +1758,24 @@ export default function MensagensPage() {
                       const temTexto = mensagem.conteudo && mensagem.conteudo.trim() !== '';
                       const dataUriImagem = temImagem ? `data:image/jpeg;base64,${mensagem.base64_imagem}` : null;
 
-                      // Detectar formato do áudio baseado no header do base64
+                      // Detectar formato do áudio baseado no header do base64 (sem logar no console)
                       const detectarFormatoAudio = (base64: string | null): string => {
                         if (!base64 || typeof base64 !== 'string') return 'audio/ogg; codecs=opus';
-
-                        // Decodificar os primeiros bytes para identificar o formato
+                        const chunk = base64.replace(/\s/g, '').substring(0, 24);
+                        if (chunk.length < 4) return 'audio/ogg; codecs=opus';
                         try {
-                          const binaryString = atob(base64.substring(0, 20));
+                          const binaryString = atob(chunk);
                           const bytes = new Uint8Array(binaryString.length);
                           for (let i = 0; i < binaryString.length; i++) {
                             bytes[i] = binaryString.charCodeAt(i);
                           }
-
-                          // OGG (Opus) - começa com "OggS"
-                          if (bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
-                            return 'audio/ogg; codecs=opus';
-                          }
-                          // WAV - começa com "RIFF"
-                          if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
-                            return 'audio/wav';
-                          }
-                          // MP3 - pode começar com ID3 ou FF FB/FF F3
+                          if (bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) return 'audio/ogg; codecs=opus';
+                          if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) return 'audio/wav';
                           if ((bytes[0] === 0xFF && (bytes[1] === 0xFB || bytes[1] === 0xF3)) ||
-                            (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33)) {
-                            return 'audio/mpeg';
-                          }
-                        } catch (e) {
-                          console.warn('Erro ao detectar formato de áudio:', e);
+                              (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33)) return 'audio/mpeg';
+                        } catch {
+                          return 'audio/ogg; codecs=opus';
                         }
-
-                        // Fallback: tentar OGG primeiro (formato mais comum do WhatsApp)
                         return 'audio/ogg; codecs=opus';
                       };
 
@@ -1817,6 +1878,36 @@ export default function MensagensPage() {
                 )}
               </div>
 
+              {/* Barra de envio de mensagem */}
+              {ENVIO_MENSAGEM_HABILITADO && (
+              <div className="flex-shrink-0 px-6 py-4 border-t border-gray-200 bg-white">
+                <div className="flex items-end gap-2">
+                  <textarea
+                    value={textoMensagem}
+                    onChange={(e) => setTextoMensagem(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleEnviarMensagem();
+                      }
+                    }}
+                    placeholder="Digite sua mensagem..."
+                    rows={1}
+                    className="flex-1 min-h-[44px] max-h-32 px-4 py-3 text-sm border border-gray-200 rounded-xl resize-y focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    disabled={enviandoMensagem}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleEnviarMensagem}
+                    disabled={enviandoMensagem || !textoMensagem.trim()}
+                    className="flex-shrink-0 p-3 rounded-xl bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title="Enviar"
+                  >
+                    <Send className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+              )}
             </div>
           </>
         ) : (

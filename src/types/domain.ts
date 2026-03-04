@@ -6,7 +6,8 @@ export interface WhatsAppInstance {
   usuario_id: string;
   telefone: string;
   instance_name?: string;
-  evolution_api_instance_id?: string;
+  z_api_instance_id?: string;
+  z_api_token?: string;
   status: StatusWhatsAppInstance;
   qr_code?: string;
   created_at: string;

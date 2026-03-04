@@ -93,7 +93,7 @@ export function ClienteActionsMenu({ fase, ativo, onEditInstance, onEditCliente,
           onClick={() => handleOptionClick(onEditInstance)}
           className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
         >
-          Editar nome instância
+          Editar telefone e instância
         </button>
         <button
           onClick={() => handleOptionClick(onEditCliente)}

@@ -23,20 +23,49 @@ export function EditarNomeInstanciaModal({
   telefone,
   onSuccess,
 }: EditarNomeInstanciaModalProps) {
+  const [telefoneValue, setTelefoneValue] = useState('');
+  const [telefoneFormatado, setTelefoneFormatado] = useState('');
   const [nomeInstancia, setNomeInstancia] = useState('');
+  const [zApiInstanceId, setZApiInstanceId] = useState('');
+  const [zApiToken, setZApiToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const formatarTelefone = (valor: string) => {
+    let numeros = valor.replace(/\D/g, '');
+    if (numeros.startsWith('55')) numeros = numeros.substring(2);
+    const limitados = numeros.slice(0, 11);
+    if (limitados.length === 0) return '';
+    const ddd = limitados.slice(0, 2);
+    const primeira = limitados.slice(2, 7);
+    const segunda = limitados.slice(7, 11);
+    if (limitados.length <= 2) return `+55 (${ddd}`;
+    if (limitados.length <= 7) return `+55 (${ddd}) ${primeira}`;
+    return `+55 (${ddd}) ${primeira}-${segunda}`;
+  };
+  const removerFormatacao = (valor: string) => {
+    const n = valor.replace(/\D/g, '');
+    return n.startsWith('55') ? n.slice(0, 13) : `55${n.slice(0, 11)}`;
+  };
+
   useEffect(() => {
-    if (instancia) {
-      setNomeInstancia(instancia.instance_name || '');
+    if (instancia || (clienteId && telefone)) {
+      const tel = instancia?.telefone || telefone || '';
+      setTelefoneValue(tel);
+      setTelefoneFormatado(tel ? formatarTelefone(tel) : '');
+      setNomeInstancia(instancia?.instance_name || '');
+      setZApiInstanceId(instancia?.z_api_instance_id || '');
+      setZApiToken(instancia?.z_api_token || '');
       setError('');
     } else {
-      // Se não há instância, inicializar com string vazia
+      setTelefoneValue('');
+      setTelefoneFormatado('');
       setNomeInstancia('');
+      setZApiInstanceId('');
+      setZApiToken('');
       setError('');
     }
-  }, [instancia, isOpen]);
+  }, [instancia, isOpen, clienteId, telefone]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,9 +76,14 @@ export function EditarNomeInstanciaModal({
       return;
     }
 
-    // Se não há instância, precisa ter clienteId e telefone para criar
-    if (!instancia && (!clienteId || !telefone)) {
+    if (!instancia && (!clienteId || !telefoneValue?.trim())) {
       setError('Não é possível criar instância sem cliente e telefone');
+      return;
+    }
+
+    const telefoneFinal = telefoneValue?.trim() ? removerFormatacao(telefoneValue) : '';
+    if (telefoneFinal && telefoneFinal.length < 12) {
+      setError('Telefone inválido. Use DDD + número.');
       return;
     }
 
@@ -60,22 +94,20 @@ export function EditarNomeInstanciaModal({
         throw new Error('Não autenticado');
       }
 
+      const tf = telefoneValue?.trim() ? removerFormatacao(telefoneValue) : '';
       const requestBody: any = {
         nomeInstancia: nomeInstancia.trim(),
+        z_api_instance_id: zApiInstanceId.trim() || undefined,
+        z_api_token: zApiToken.trim() || undefined,
+        telefone: tf || undefined,
       };
 
-      // Se tem instância, usar instanciaId
       if (instancia) {
         requestBody.instanciaId = instancia.id;
-        // Sempre enviar clienteId quando disponível para corrigir usuario_id se necessário
-        if (clienteId) {
-          requestBody.clienteId = clienteId;
-        }
-      } 
-      // Se não tem instância mas tem clienteId e telefone, usar esses dados
-      else if (clienteId && telefone) {
+        if (clienteId) requestBody.clienteId = clienteId;
+      } else if (clienteId && tf) {
         requestBody.clienteId = clienteId;
-        requestBody.telefone = telefone;
+        requestBody.telefone = tf;
       }
 
       const response = await fetch('/api/admin/editar-nome-instancia', {
@@ -95,9 +127,13 @@ export function EditarNomeInstanciaModal({
 
       onSuccess();
       onClose();
+      setTelefoneValue('');
+      setTelefoneFormatado('');
       setNomeInstancia('');
+      setZApiInstanceId('');
+      setZApiToken('');
     } catch (err: any) {
-      setError(err.message || 'Erro ao atualizar nome da instância. Tente novamente.');
+      setError(err.message || 'Erro ao atualizar instância. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -105,7 +141,11 @@ export function EditarNomeInstanciaModal({
 
   const handleClose = () => {
     if (!loading) {
+      setTelefoneValue('');
+      setTelefoneFormatado('');
       setNomeInstancia('');
+      setZApiInstanceId('');
+      setZApiToken('');
       setError('');
       onClose();
     }
@@ -115,7 +155,7 @@ export function EditarNomeInstanciaModal({
     <Modal 
       isOpen={isOpen} 
       onClose={handleClose}
-      title="Editar Nome da Instância"
+      title="Editar Instância Z-API"
       closeOnClickOutside={!loading}
       size="md"
     >
@@ -136,14 +176,53 @@ export function EditarNomeInstanciaModal({
 
         <form onSubmit={handleSubmit}>
           <Input
+            label="Telefone IA"
+            type="tel"
+            value={telefoneFormatado}
+            onChange={(e) => {
+              const v = e.target.value;
+              const formatado = formatarTelefone(v);
+              const raw = removerFormatacao(v);
+              setTelefoneFormatado(formatado);
+              setTelefoneValue(raw);
+            }}
+            required={!instancia}
+            disabled={loading}
+            placeholder="+55 (11) 99999-9999"
+          />
+
+          <Input
             label="Nome da Instância"
             type="text"
             value={nomeInstancia}
             onChange={(e) => setNomeInstancia(e.target.value)}
             required
             disabled={loading}
-            placeholder="Digite o nome da instância"
+            placeholder="Ex: joao5511999999999"
           />
+
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2 mt-4">
+            <p className="text-sm font-medium text-gray-700">Credenciais Z-API</p>
+            <p className="text-xs text-gray-500">
+              Instance ID e Token obtidos no painel Z-API. Necessários para verificar conexão e exibir QR code.
+            </p>
+            <Input
+              label="Instance ID"
+              type="text"
+              value={zApiInstanceId}
+              onChange={(e) => setZApiInstanceId(e.target.value)}
+              disabled={loading}
+              placeholder="ID da instância no Z-API"
+            />
+            <Input
+              label="Token"
+              type="password"
+              value={zApiToken}
+              onChange={(e) => setZApiToken(e.target.value)}
+              disabled={loading}
+              placeholder="Token da instância"
+            />
+          </div>
 
           <div className="flex justify-end gap-3 pt-4">
             <Button

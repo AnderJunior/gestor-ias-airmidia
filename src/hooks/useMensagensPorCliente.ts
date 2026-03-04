@@ -7,7 +7,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useAuth } from '@/hooks/useAuth';
 
 const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutos
-const REALTIME_REFETCH_DEBOUNCE_MS = 800;
+const REALTIME_REFETCH_DEBOUNCE_MS = 300;
 const CLIENTES_LIST_DEBOUNCE_MS = 1200;
 
 const mensagensCache = new Map<string, { data: MensagemConversa[]; ts: number }>();

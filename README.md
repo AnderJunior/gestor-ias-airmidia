@@ -34,10 +34,15 @@ npm install
 cp .env.local.example .env.local
 ```
 
-Edite o arquivo `.env.local` e adicione suas credenciais do Supabase:
+Edite o arquivo `.env.local` e adicione suas credenciais do Supabase e (opcional) Twilio para envio de mensagens WhatsApp:
 ```
 NEXT_PUBLIC_SUPABASE_URL=sua_url_do_supabase
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_chave_anonima_do_supabase
+
+# Envio de mensagens WhatsApp (Twilio)
+TWILIO_ACCOUNT_SID=seu_account_sid
+TWILIO_AUTH_TOKEN=seu_auth_token
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 ```
 
 ## 🗄️ Configuração do Banco de Dados (Supabase)

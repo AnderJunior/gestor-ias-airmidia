@@ -1,6 +1,9 @@
 /**
+ * @deprecated Migração para Z-API concluída. Este módulo é mantido apenas para
+ * compatibilidade temporária com instâncias Evolution existentes.
+ * Use src/lib/api/z-api.ts e as rotas /api/whatsapp/* para novas integrações.
+ *
  * Funções auxiliares para integração com Evolution API
- * Estas funções podem ser usadas para sincronizar dados da Evolution API
  */
 
 import { updateWhatsAppInstanceStatus, sincronizarStatusInstancia, getWhatsAppInstanceByInstanceName } from './whatsapp';

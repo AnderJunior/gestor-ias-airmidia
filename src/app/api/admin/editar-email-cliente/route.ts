@@ -68,20 +68,41 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { clienteId, email } = body;
+    const { clienteId, email, telefone_ia } = body;
 
-    if (!clienteId || !email) {
+    if (!clienteId) {
       return NextResponse.json(
-        { error: 'ID do cliente e e-mail são obrigatórios' },
+        { error: 'ID do cliente é obrigatório' },
         { status: 400 }
       );
     }
 
-    // Validar formato do email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    const atualizarTelefone = telefone_ia !== undefined && String(telefone_ia).trim() !== '';
+    const formatarTelefone = (v: string) => {
+      const n = String(v).replace(/\D/g, '');
+      return n.startsWith('55') ? n.slice(0, 13) : `55${n.slice(0, 11)}`;
+    };
+
+    if (!email && !atualizarTelefone) {
       return NextResponse.json(
-        { error: 'E-mail inválido' },
+        { error: 'Informe e-mail e/ou telefone para atualizar' },
+        { status: 400 }
+      );
+    }
+
+    if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return NextResponse.json(
+          { error: 'E-mail inválido' },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (atualizarTelefone && formatarTelefone(String(telefone_ia).trim()).length < 12) {
+      return NextResponse.json(
+        { error: 'Telefone inválido. Use DDD + número.' },
         { status: 400 }
       );
     }
@@ -107,34 +128,55 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar se o email já está em uso por outro usuário
-    const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers();
-    const emailExists = existingUser.users.some(
-      u => u.email === email && u.id !== clienteId
-    );
-
-    if (emailExists) {
-      return NextResponse.json(
-        { error: 'Este e-mail já está em uso por outro usuário' },
-        { status: 400 }
+    if (email) {
+      const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers();
+      const emailExists = existingUser.users.some(
+        u => u.email === email && u.id !== clienteId
       );
+      if (emailExists) {
+        return NextResponse.json(
+          { error: 'Este e-mail já está em uso por outro usuário' },
+          { status: 400 }
+        );
+      }
     }
 
-    // Atualizar email no Supabase Auth
-    const { data: authData, error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
+    if (email) {
+      const { error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
       clienteId,
       {
         email: email.trim(),
-        email_confirm: true, // Confirmar email automaticamente
+        email_confirm: true,
       }
     );
 
-    if (updateAuthError) {
-      console.error('Erro ao atualizar email no Auth:', updateAuthError);
-      return NextResponse.json(
-        { error: updateAuthError.message || 'Erro ao atualizar e-mail' },
-        { status: 500 }
-      );
+      if (updateAuthError) {
+        console.error('Erro ao atualizar email no Auth:', updateAuthError);
+        return NextResponse.json(
+          { error: updateAuthError.message || 'Erro ao atualizar e-mail' },
+          { status: 500 }
+        );
+      }
+    }
+
+    if (atualizarTelefone) {
+      const tf = formatarTelefone(String(telefone_ia).trim());
+      await supabaseAdmin.from('usuarios').update({
+        telefone_ia: tf,
+        updated_at: new Date().toISOString(),
+      }).eq('id', clienteId);
+
+      const { data: inst } = await supabaseAdmin
+        .from('whatsapp_instances')
+        .select('id')
+        .eq('usuario_id', clienteId)
+        .maybeSingle();
+      if (inst) {
+        await supabaseAdmin.from('whatsapp_instances').update({
+          telefone: tf,
+          updated_at: new Date().toISOString(),
+        }).eq('usuario_id', clienteId);
+      }
     }
 
     return NextResponse.json(

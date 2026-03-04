@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useUsuario } from '@/hooks/useUsuario';
-import { verificarConnectionState, gerarNomeInstancia } from '@/lib/api/evolution';
-import { sincronizarStatusInstancia, getInstanceNameByUsuario } from '@/lib/api/whatsapp';
+import { supabase } from '@/lib/supabaseClient';
+import { getInstanceNameByUsuario } from '@/lib/api/whatsapp';
 import { ConnectionNotification } from '@/components/notifications/ConnectionNotification';
 import { WhatsAppConnectionModal } from './WhatsAppConnectionModal';
 import { useNotifications } from '@/contexts/NotificationsContext';
@@ -15,72 +15,43 @@ export function VerificacaoConexaoWhatsApp() {
   const { addNotification } = useNotifications();
   const [mostrarNotificacao, setMostrarNotificacao] = useState(false);
   const [mostrarModal, setMostrarModal] = useState(false);
-
-  // Buscar instanceName da tabela whatsapp_instances
   const [instanceName, setInstanceName] = useState<string>('');
   const telefoneUsuario = usuario?.telefone_ia || null;
-  
-  // Gerar instanceName se não existir no banco mas houver telefone e nome
-  const finalInstanceName = useMemo(() => {
-    return instanceName || (telefoneUsuario && usuario?.nome 
-      ? gerarNomeInstancia(usuario.nome, telefoneUsuario) 
-      : '');
-  }, [instanceName, telefoneUsuario, usuario?.nome]);
+  const [zApiNaoConfigurado, setZApiNaoConfigurado] = useState(false);
 
   const verificando = authLoading || usuarioLoading;
 
-  // Se o usuário for administrador, não verificar conexão WhatsApp
-  // Verificar após o carregamento para evitar problemas com hooks
   useEffect(() => {
-    if (!verificando && usuario?.tipo === 'administracao') {
-      // Não fazer nada se for administrador
-      return;
-    }
-  }, [verificando, usuario?.tipo]);
-
-  useEffect(() => {
-    // Não executar se for administrador
-    if (usuario?.tipo === 'administracao') {
-      return;
-    }
+    if (usuario?.tipo === 'administracao') return;
 
     async function loadInstanceName() {
       if (!user?.id) {
         setInstanceName('');
         return;
       }
-
       try {
-        const instanceNameFromDb = await getInstanceNameByUsuario(user.id);
-        setInstanceName(instanceNameFromDb || '');
-      } catch (error) {
-        console.error('Erro ao buscar instance_name:', error);
+        const name = await getInstanceNameByUsuario(user.id);
+        setInstanceName(name || '');
+      } catch {
         setInstanceName('');
       }
     }
-
-    if (user?.id) {
-      loadInstanceName();
-    }
+    if (user?.id) loadInstanceName();
   }, [user?.id, usuario?.tipo]);
 
-  // Verificar status na Evolution API periodicamente (consolidado - única verificação)
+  // Verificar status via Z-API periodicamente
   useEffect(() => {
-    // Não verificar se for administrador ou se o modal estiver aberto
-    if (usuario?.tipo === 'administracao' || mostrarModal || !telefoneUsuario || !user?.id) {
-      return;
-    }
-    
-    // Se não houver instanceName final, mostrar notificação para criar instância
-    if (!finalInstanceName) {
+    if (usuario?.tipo === 'administracao' || mostrarModal || !telefoneUsuario || !user?.id) return;
+    if (!instanceName) {
       setMostrarNotificacao(true);
+      setZApiNaoConfigurado(false);
       return;
     }
 
     let isMounted = true;
     let lastCheckTime = 0;
-    let lastKnownState: string | null = null;
-    const CHECK_INTERVAL = 120000; // 2 minutos entre verificações para reduzir requisições
+    let lastKnownState: boolean | null = null;
+    const CHECK_INTERVAL = 30000; // 30s para detectar desconexão mais rápido
 
     const verificarStatus = async () => {
       const now = Date.now();
@@ -88,45 +59,64 @@ export function VerificacaoConexaoWhatsApp() {
       lastCheckTime = now;
 
       try {
-        const state = await verificarConnectionState(finalInstanceName);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const res = await fetch('/api/whatsapp/status', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const data = await res.json();
+
         if (!isMounted) return;
 
-        const stateChanged = lastKnownState !== state;
-        lastKnownState = state;
-
-        if (state !== 'open') {
-          let statusSupabase: 'conectado' | 'desconectado' | 'conectando' | 'erro' = 'desconectado';
-          if (state === 'connecting') statusSupabase = 'conectando';
-          else if (state === 'close' || state === null) statusSupabase = 'desconectado';
-          else statusSupabase = 'desconectado';
-
-          if (stateChanged) {
-            try {
-              await sincronizarStatusInstancia(finalInstanceName, telefoneUsuario, statusSupabase, user.id);
-            } catch (syncError) {
-              console.error('Erro ao sincronizar status com Supabase:', syncError);
-            }
-          }
+        if (res.status === 400 && data.error?.includes('não configurada')) {
+          setZApiNaoConfigurado(true);
           setMostrarNotificacao(true);
-        } else {
-          if (stateChanged) {
-            try {
-              await sincronizarStatusInstancia(finalInstanceName, telefoneUsuario, 'conectado', user.id);
-            } catch (syncError) {
-              console.error('Erro ao sincronizar status conectado com Supabase:', syncError);
+          return;
+        }
+
+        setZApiNaoConfigurado(false);
+        const connected = data.connected === true;
+        const stateChanged = lastKnownState !== connected;
+        lastKnownState = connected;
+
+        if (stateChanged) {
+          const statusSupabase = connected ? 'conectado' : 'desconectado';
+          try {
+            const res = await fetch('/api/whatsapp/sync-status', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                instanceName,
+                telefone: telefoneUsuario,
+                status: statusSupabase,
+              }),
+            });
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              console.error('Erro ao sincronizar status:', errData);
             }
+          } catch (e) {
+            console.error('Erro ao sincronizar status:', e);
           }
+        }
+
+        if (connected) {
           setMostrarNotificacao(false);
           setMostrarModal(false);
+        } else {
+          setMostrarNotificacao(true);
         }
       } catch (error) {
-        console.error('Erro ao verificar status na Evolution API:', error);
+        console.error('Erro ao verificar status Z-API:', error);
         setMostrarNotificacao(true);
       }
     };
 
     verificarStatus();
-
     const interval = setInterval(() => {
       if (!mostrarModal && isMounted) verificarStatus();
     }, CHECK_INTERVAL);
@@ -135,7 +125,7 @@ export function VerificacaoConexaoWhatsApp() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [telefoneUsuario, instanceName, user?.id, mostrarModal]);
+  }, [telefoneUsuario, instanceName, user?.id, mostrarModal, usuario?.tipo]);
 
   const handleConectarClick = () => {
     setMostrarNotificacao(false);
@@ -144,7 +134,6 @@ export function VerificacaoConexaoWhatsApp() {
 
   const handleFecharNotificacao = () => {
     setMostrarNotificacao(false);
-    // Adicionar notificação ao sistema quando o usuário fechar o alerta
     const agora = new Date();
     const dataFormatada = agora.toLocaleDateString('pt-BR', {
       day: '2-digit',
@@ -155,35 +144,21 @@ export function VerificacaoConexaoWhatsApp() {
       hour: '2-digit',
       minute: '2-digit',
     });
-    
     addNotification({
       title: 'WhatsApp Desconectado',
       message: `${dataFormatada}, ${horaFormatada}`,
       type: 'warning',
       action: {
         label: 'Conectar Agora',
-        onClick: () => {
-          setMostrarModal(true);
-        },
+        onClick: () => setMostrarModal(true),
       },
     });
   };
 
-  const handleFecharModal = () => {
-    setMostrarModal(false);
-    // A verificação periódica no useEffect já vai verificar automaticamente
-    // Não é necessário fazer uma verificação adicional aqui
-  };
+  const handleFecharModal = () => setMostrarModal(false);
 
-  // Não renderiza nada enquanto está verificando ou se não há usuário
-  if (verificando || !user) {
-    return null;
-  }
-
-  // Se o usuário for administrador, não verificar conexão WhatsApp
-  if (usuario?.tipo === 'administracao') {
-    return null;
-  }
+  if (verificando || !user) return null;
+  if (usuario?.tipo === 'administracao') return null;
 
   return (
     <>
@@ -191,16 +166,16 @@ export function VerificacaoConexaoWhatsApp() {
         isVisible={mostrarNotificacao}
         onClose={handleFecharNotificacao}
         onConnectClick={handleConectarClick}
+        mensagemZApiNaoConfigurado={zApiNaoConfigurado}
       />
-      {(finalInstanceName || telefoneUsuario) && (
+      {(instanceName || telefoneUsuario) && (
         <WhatsAppConnectionModal
           isOpen={mostrarModal}
           onClose={handleFecharModal}
-          instanceName={finalInstanceName || ''}
+          instanceName={instanceName || ''}
           telefone={telefoneUsuario || undefined}
         />
       )}
     </>
   );
 }
-

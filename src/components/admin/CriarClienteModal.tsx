@@ -22,6 +22,8 @@ export function CriarClienteModal({ isOpen, onClose, onSuccess, faseInicial }: C
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [zApiInstanceId, setZApiInstanceId] = useState('');
+  const [zApiToken, setZApiToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -110,6 +112,8 @@ export function CriarClienteModal({ isOpen, onClose, onSuccess, faseInicial }: C
           email,
           senha,
           fase: faseInicial,
+          z_api_instance_id: zApiInstanceId.trim() || undefined,
+          z_api_token: zApiToken.trim() || undefined,
         }),
       });
 
@@ -138,6 +142,8 @@ export function CriarClienteModal({ isOpen, onClose, onSuccess, faseInicial }: C
       setTipoCliente('atendimento');
       setEmail('');
       setSenha('');
+      setZApiInstanceId('');
+      setZApiToken('');
       setShowPassword(false);
       
       // Fechar modal de criação
@@ -160,6 +166,8 @@ export function CriarClienteModal({ isOpen, onClose, onSuccess, faseInicial }: C
       setTipoCliente('atendimento');
       setEmail('');
       setSenha('');
+      setZApiInstanceId('');
+      setZApiToken('');
       setShowPassword(false);
       setError('');
       onClose();
@@ -221,6 +229,29 @@ export function CriarClienteModal({ isOpen, onClose, onSuccess, faseInicial }: C
             disabled={loading}
             placeholder="email@exemplo.com"
           />
+
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+            <p className="text-sm font-medium text-gray-700">Instância Z-API (opcional)</p>
+            <p className="text-xs text-gray-500">
+              Crie a instância no painel Z-API e informe os dados para vincular ao cliente.
+            </p>
+            <Input
+              label="Instance ID"
+              type="text"
+              value={zApiInstanceId}
+              onChange={(e) => setZApiInstanceId(e.target.value)}
+              disabled={loading}
+              placeholder="ID da instância no Z-API"
+            />
+            <Input
+              label="Token"
+              type="password"
+              value={zApiToken}
+              onChange={(e) => setZApiToken(e.target.value)}
+              disabled={loading}
+              placeholder="Token da instância"
+            />
+          </div>
 
           <div className="w-full">
             <label className="block text-sm font-medium text-gray-700 mb-1">

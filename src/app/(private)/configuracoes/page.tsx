@@ -7,9 +7,9 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { WhatsAppConnectionModal } from '@/components/whatsapp/WhatsAppConnectionModal';
-import { verificarStatusConexaoSupabase, sincronizarStatusInstancia, getWhatsAppInstanceByInstanceName, getInstanceNameByUsuario } from '@/lib/api/whatsapp';
-import { fazerLogoutInstancia } from '@/lib/api/evolution';
-import { atualizarNomeUsuario } from '@/lib/api/usuarios';
+import { getWhatsAppInstanceByInstanceName, getInstanceNameByUsuario } from '@/lib/api/whatsapp';
+import { atualizarNomeUsuario, type ApiEnvioMensagens } from '@/lib/api/usuarios';
+import { supabase } from '@/lib/supabaseClient';
 import { CalendarIcon, X } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { WebhooksConfigSection } from '@/components/configuracoes/WebhooksConfigSection';
@@ -28,16 +28,22 @@ export default function ConfiguracoesPage() {
   const [mostrarModalWhatsApp, setMostrarModalWhatsApp] = useState(false);
   const [mostrarModalDesconectar, setMostrarModalDesconectar] = useState(false);
   const [desconectando, setDesconectando] = useState(false);
+  const [apiEnvioMensagens, setApiEnvioMensagens] = useState<ApiEnvioMensagens>('twilio');
+  const [loadingApiEnvio, setLoadingApiEnvio] = useState(false);
 
-  // Inicializar nome quando usuario carregar
+  // Inicializar nome e api_envio quando usuario carregar
   useEffect(() => {
     if (usuario?.nome) {
       setNome(usuario.nome);
     }
-  }, [usuario?.nome]);
+    if (usuario?.api_envio_mensagens === 'z_api' || usuario?.api_envio_mensagens === 'twilio') {
+      setApiEnvioMensagens(usuario.api_envio_mensagens);
+    }
+  }, [usuario?.nome, usuario?.api_envio_mensagens]);
 
   // Buscar instanceName da tabela whatsapp_instances
   const [instanceName, setInstanceName] = useState<string>('');
+  const [zApiConfigurado, setZApiConfigurado] = useState(false);
   const telefoneUsuario = usuario?.telefone_ia || null;
 
   useEffect(() => {
@@ -59,9 +65,9 @@ export default function ConfiguracoesPage() {
     loadInstanceName();
   }, [user?.id]);
 
-  // Verificar status WhatsApp
+  // Verificar status WhatsApp (sempre via Z-API em tempo real, não do banco)
   useEffect(() => {
-    if (!instanceName || !telefoneUsuario) {
+    if (!instanceName || !telefoneUsuario || !user?.id) {
       setLoadingStatus(false);
       setWhatsappStatus('desconectado');
       setTelefoneConectado(null);
@@ -72,23 +78,34 @@ export default function ConfiguracoesPage() {
       try {
         setLoadingStatus(true);
         const instance = await getWhatsAppInstanceByInstanceName(instanceName);
-        
-        if (instance) {
-          setWhatsappStatus(instance.status);
-          // Só definir telefone conectado se o status for "conectado"
-          if (instance.status === 'conectado') {
-            setTelefoneConectado(instance.telefone);
-          } else {
-            setTelefoneConectado(null);
-          }
-        } else {
+        setZApiConfigurado(!!(instance?.z_api_instance_id && instance?.z_api_token));
+
+        if (!instance?.z_api_instance_id || !instance?.z_api_token) {
           setWhatsappStatus('desconectado');
           setTelefoneConectado(null);
+          return;
         }
+
+        // Chamar API que consulta Z-API em tempo real (não usar status do banco)
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setWhatsappStatus('desconectado');
+          return;
+        }
+
+        const res = await fetch('/api/whatsapp/status', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const data = await res.json();
+
+        const connected = data.connected === true;
+        setWhatsappStatus(connected ? 'conectado' : 'desconectado');
+        setTelefoneConectado(connected ? instance.telefone : null);
       } catch (error) {
         console.error('Erro ao verificar status WhatsApp:', error);
         setWhatsappStatus('erro');
         setTelefoneConectado(null);
+        setZApiConfigurado(false);
       } finally {
         setLoadingStatus(false);
       }
@@ -99,7 +116,7 @@ export default function ConfiguracoesPage() {
     // Verificar a cada 30 segundos
     const interval = setInterval(verificarStatus, 30000);
     return () => clearInterval(interval);
-  }, [instanceName, telefoneUsuario]);
+  }, [instanceName, telefoneUsuario, user?.id]);
 
   const handleSalvarNome = async () => {
     if (!nome.trim() || nome.trim() === usuario?.nome) {
@@ -185,46 +202,67 @@ export default function ConfiguracoesPage() {
     }
   };
 
-  const handleDesconectar = async () => {
-    if (!instanceName || !telefoneUsuario || !user?.id) {
-      return;
+  const handleAlterarApiEnvio = async (api: ApiEnvioMensagens) => {
+    if (api === apiEnvioMensagens) return;
+    setLoadingApiEnvio(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Sessão expirada. Faça login novamente.');
+        return;
+      }
+
+      const res = await fetch('/api/usuarios/api-envio-mensagens', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ api }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao atualizar');
+      }
+
+      setApiEnvioMensagens(api);
+      await refetch();
+    } catch (error) {
+      console.error('Erro ao atualizar API de envio:', error);
+      alert(error instanceof Error ? error.message : 'Erro ao atualizar. Tente novamente.');
+    } finally {
+      setLoadingApiEnvio(false);
     }
+  };
+
+  const handleDesconectar = async () => {
+    if (!instanceName || !telefoneUsuario || !user?.id) return;
 
     setDesconectando(true);
     try {
-      // Fazer logout na Evolution API
-      const logoutSuccess = await fazerLogoutInstancia(instanceName);
-      
-      if (logoutSuccess) {
-        // Atualizar status no Supabase
-        await sincronizarStatusInstancia(instanceName, telefoneUsuario, 'desconectado', user.id);
-        
-        // Atualizar status local - recarregar do Supabase para garantir consistência
-        setTimeout(async () => {
-          if (instanceName) {
-            try {
-              const instance = await getWhatsAppInstanceByInstanceName(instanceName);
-              if (instance) {
-                setWhatsappStatus(instance.status);
-                if (instance.status === 'conectado') {
-                  setTelefoneConectado(instance.telefone);
-                } else {
-                  setTelefoneConectado(null);
-                }
-              } else {
-                setWhatsappStatus('desconectado');
-                setTelefoneConectado(null);
-              }
-            } catch (error) {
-              console.error('Erro ao recarregar status após desconexão:', error);
-              setWhatsappStatus('desconectado');
-              setTelefoneConectado(null);
-            }
-          }
-        }, 1000);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Sessão expirada. Faça login novamente.');
+        return;
+      }
+
+      const res = await fetch('/api/whatsapp/disconnect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setWhatsappStatus('desconectado');
+        setTelefoneConectado(null);
         setMostrarModalDesconectar(false);
       } else {
-        alert('Erro ao desconectar. Tente novamente.');
+        alert(data.error || 'Erro ao desconectar. Tente novamente.');
       }
     } catch (error) {
       console.error('Erro ao desconectar:', error);
@@ -370,7 +408,7 @@ export default function ConfiguracoesPage() {
                   <p className="text-xs text-gray-500">Verificando...</p>
                 ) : (
                   <div className="flex items-center gap-2">
-                    {whatsappStatus === 'conectado' && (
+                    {whatsappStatus === 'conectado' && zApiConfigurado && (
                       <button
                         onClick={() => setMostrarModalDesconectar(true)}
                         className="text-red-600 hover:text-red-700 transition-colors p-1 rounded-md hover:bg-red-50"
@@ -385,13 +423,19 @@ export default function ConfiguracoesPage() {
                   </div>
                 )}
                 {!loadingStatus && whatsappStatus !== 'conectado' && instanceName && (
-                  <Button
-                    onClick={() => setMostrarModalWhatsApp(true)}
-                    variant="primary"
-                    size="sm"
-                  >
-                    Conectar
-                  </Button>
+                  zApiConfigurado ? (
+                    <Button
+                      onClick={() => setMostrarModalWhatsApp(true)}
+                      variant="primary"
+                      size="sm"
+                    >
+                      Conectar
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-amber-600">
+                      Configure a instância Z-API ao editar o cliente
+                    </p>
+                  )
                 )}
               </div>
             </div>
@@ -400,6 +444,41 @@ export default function ConfiguracoesPage() {
                 Configure seu telefone nas configurações iniciais para conectar o WhatsApp.
               </p>
             )}
+          </div>
+
+          {/* Divisor */}
+          <div className="border-t border-gray-200"></div>
+
+          {/* API de envio de mensagens */}
+          <div className="space-y-4">
+            <p className="text-sm font-medium text-gray-900">API para envio de mensagens</p>
+            <p className="text-xs text-gray-500">
+              Escolha qual API será usada ao enviar mensagens WhatsApp nos atendimentos.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleAlterarApiEnvio('z_api')}
+                disabled={loadingApiEnvio}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all ${
+                  apiEnvioMensagens === 'z_api'
+                    ? 'border-primary-600 bg-primary-50 text-primary-700'
+                    : 'border-gray-200 hover:border-gray-300 bg-white text-gray-600'
+                } disabled:opacity-50`}
+              >
+                <span className="font-medium">API AIR Mídia (Z-API)</span>
+              </button>
+              <button
+                onClick={() => handleAlterarApiEnvio('twilio')}
+                disabled={loadingApiEnvio}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all ${
+                  apiEnvioMensagens === 'twilio'
+                    ? 'border-primary-600 bg-primary-50 text-primary-700'
+                    : 'border-gray-200 hover:border-gray-300 bg-white text-gray-600'
+                } disabled:opacity-50`}
+              >
+                <span className="font-medium">API Oficial (Twilio)</span>
+              </button>
+            </div>
           </div>
 
           {/* Divisor */}
@@ -462,10 +541,11 @@ export default function ConfiguracoesPage() {
                     } else {
                       setTelefoneConectado(null);
                     }
-                  } else {
-                    setWhatsappStatus('desconectado');
-                    setTelefoneConectado(null);
-                  }
+        } else {
+          setWhatsappStatus('desconectado');
+          setTelefoneConectado(null);
+          setZApiConfigurado(false);
+        }
                 } catch (error) {
                   console.error('Erro ao recarregar status:', error);
                 }

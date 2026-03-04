@@ -1,5 +1,7 @@
 import { supabase } from '../supabaseClient';
 
+export type ApiEnvioMensagens = 'z_api' | 'twilio';
+
 export interface Usuario {
   id: string;
   nome: string | null;
@@ -10,6 +12,7 @@ export interface Usuario {
   fase?: 'teste' | 'producao';
   ativo?: boolean;
   admin_responsavel?: string | null;
+  api_envio_mensagens?: ApiEnvioMensagens | null;
   created_at: string;
   updated_at: string;
 }
@@ -204,6 +207,43 @@ export async function atualizarNomeUsuario(nome: string, userId?: string): Promi
 }
 
 /**
+ * Atualiza a API de envio de mensagens do usuário
+ * @param api - 'z_api' (AIR Mídia) ou 'twilio' (Oficial)
+ */
+export async function atualizarApiEnvioMensagens(
+  api: ApiEnvioMensagens,
+  userId?: string
+): Promise<Usuario> {
+  let finalUserId = userId;
+
+  if (!finalUserId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+    finalUserId = user.id;
+  }
+
+  const { data, error } = await supabase
+    .from('usuarios')
+    .update({
+      api_envio_mensagens: api,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', finalUserId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating api_envio_mensagens:', error);
+    throw error;
+  }
+
+  clearUsuarioCache(finalUserId);
+  return data;
+}
+
+/**
  * Busca todos os usuários (clientes) para administração
  * Exclui apenas usuários com tipo 'administracao'
  * Inclui clientes ativos e inativos
@@ -371,4 +411,3 @@ export async function getHistoricoFaseCliente(usuarioId: string): Promise<Histor
     fase_anterior_id: index > 0 ? registros[index - 1].fase_id : null,
   }));
 }
-

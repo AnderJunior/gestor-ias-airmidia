@@ -8,7 +8,7 @@ import { Usuario } from '@/lib/api/usuarios';
 import { WhatsAppInstance } from '@/types/domain';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
-import { ArrowLeft, Trash2, Edit, Phone, Mail, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Play, Pause, Mic, File, Image as ImageIcon, Download, Check, CheckSquare, Square, UserPlus } from 'lucide-react';
+import { ArrowLeft, Trash2, Edit, Phone, Mail, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Play, Pause, Mic, File, Image as ImageIcon, Download, Check, CheckSquare, Square, UserPlus, Server } from 'lucide-react';
 import { ROUTES } from '@/lib/constants';
 import { ClienteActionsMenu } from '@/components/admin/ClienteActionsMenu';
 import { EditarClienteModal } from '@/components/admin/EditarClienteModal';
@@ -1451,7 +1451,24 @@ export default function ClienteDetailPage() {
               <div>
                 <p className="text-xs font-medium text-gray-500">Telefone IA</p>
                 <p className="text-sm text-gray-900 mt-1">
-                  {formatarTelefone(cliente.telefone_ia)}
+                  {formatarTelefone(cliente.telefone_ia) || '—'}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  Editar via menu ou informações do cliente
+                </p>
+              </div>
+            </div>
+
+            {/* Nome da Instância */}
+            <div className="flex items-start gap-3">
+              <Server className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-xs font-medium text-gray-500">Nome da Instância</p>
+                <p className="text-sm text-gray-900 mt-1">
+                  {cliente.instancias?.[0]?.instance_name || '—'}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  Editar via &quot;Editar telefone e instância&quot;
                 </p>
               </div>
             </div>

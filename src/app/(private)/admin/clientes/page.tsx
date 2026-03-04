@@ -17,7 +17,7 @@ import { SelecionarResponsavelPopover } from '@/components/tarefas/SelecionarRes
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
-import { Plus, Trash2, List, LayoutGrid, X, Check } from 'lucide-react';
+import { Plus, Trash2, List, LayoutGrid, X, Check, RotateCw } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import {
   fetchKanbanColunas,
@@ -169,6 +169,8 @@ export default function AdminClientesPage() {
   const [administradores, setAdministradores] = useState<Usuario[]>([]);
   const [responsavelPopoverClienteId, setResponsavelPopoverClienteId] = useState<string | null>(null);
   const [updatingResponsavelId, setUpdatingResponsavelId] = useState<string | null>(null);
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
+  const [lastStatusRefresh, setLastStatusRefresh] = useState(0);
   const kanbanScrollRef = useRef<HTMLDivElement>(null);
   const scrollAnimationRef = useRef<number | null>(null);
   const lastScrollTimeRef = useRef<number>(0);
@@ -269,7 +271,30 @@ export default function AdminClientesPage() {
     if (!loading) {
       loadStatus();
     }
-  }, [clientes, loading]);
+  }, [clientes, loading, lastStatusRefresh]);
+
+  const handleRefreshStatusInstancias = async () => {
+    setRefreshingStatus(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const res = await fetch('/api/admin/atualizar-status-instancias-z-api', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (res.ok) {
+        setLastStatusRefresh(Date.now());
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar status das instâncias:', err);
+    } finally {
+      setRefreshingStatus(false);
+    }
+  };
 
   // Filtrar clientes por termo de busca
   const clientesFiltrados = useMemo(() => {
@@ -1214,6 +1239,16 @@ export default function AdminClientesPage() {
               <LayoutGrid className="w-5 h-5" />
             </button>
           </div>
+          <button
+            onClick={handleRefreshStatusInstancias}
+            disabled={refreshingStatus}
+            className="flex items-center justify-center w-10 h-10 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Atualizar status das instâncias Z-API"
+          >
+            <RotateCw
+              className={`w-5 h-5 ${refreshingStatus ? 'animate-spin' : ''}`}
+            />
+          </button>
           {viewMode === 'lista' && (
             <Button
               onClick={() => setIsModalOpen(true)}

@@ -68,7 +68,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { instanciaId, clienteId, nomeInstancia, telefone } = body;
+    const { instanciaId, clienteId, nomeInstancia, telefone, z_api_instance_id, z_api_token } = body;
+
+    const formatarTelefone = (v: string) => {
+      const n = String(v).replace(/\D/g, '');
+      return n.startsWith('55') ? n.slice(0, 13) : `55${n.slice(0, 11)}`;
+    };
 
     if (!nomeInstancia) {
       return NextResponse.json(
@@ -84,14 +89,14 @@ export async function POST(request: NextRequest) {
       // Se também tem clienteId, atualizar o usuario_id para corrigir vínculo errado
       const updateData: any = {
         instance_name: nomeInstancia.trim(),
-        evolution_api_instance_id: nomeInstancia.trim(), // Atualizar também o ID da Evolution API
         updated_at: new Date().toISOString(),
       };
-      
-      // Se clienteId foi fornecido, atualizar também o usuario_id
-      if (clienteId) {
-        updateData.usuario_id = clienteId;
+      if (z_api_instance_id !== undefined) updateData.z_api_instance_id = z_api_instance_id || null;
+      if (z_api_token !== undefined) updateData.z_api_token = z_api_token || null;
+      if (telefone && telefone.trim()) {
+        updateData.telefone = formatarTelefone(telefone.trim());
       }
+      if (clienteId) updateData.usuario_id = clienteId;
       
       const { data, error: updateError } = await supabaseAdmin
         .from('whatsapp_instances')
@@ -109,25 +114,35 @@ export async function POST(request: NextRequest) {
       }
 
       instanciaData = data;
-    } 
+
+      if (telefone && telefone.trim() && clienteId) {
+        const telefoneFormatado = formatarTelefone(telefone.trim());
+        await supabaseAdmin.from('usuarios').update({
+          telefone_ia: telefoneFormatado,
+          updated_at: new Date().toISOString(),
+        }).eq('id', clienteId);
+      }
+    }
     // Se não tem instanciaId mas tem clienteId e telefone, criar ou atualizar instância
     else if (clienteId && telefone) {
-      // Buscar instância existente pelo telefone
+      const telefoneFormatado = formatarTelefone(telefone.trim());
       const { data: existingInstance } = await supabaseAdmin
         .from('whatsapp_instances')
         .select('id')
-        .eq('telefone', telefone)
-        .single();
+        .eq('usuario_id', clienteId)
+        .maybeSingle();
 
       if (existingInstance) {
-        // Atualizar instância existente
+        const updatePayload: any = {
+          instance_name: nomeInstancia.trim(),
+          telefone: telefoneFormatado,
+          updated_at: new Date().toISOString(),
+        };
+        if (z_api_instance_id !== undefined) updatePayload.z_api_instance_id = z_api_instance_id || null;
+        if (z_api_token !== undefined) updatePayload.z_api_token = z_api_token || null;
         const { data, error: updateError } = await supabaseAdmin
           .from('whatsapp_instances')
-          .update({
-            instance_name: nomeInstancia.trim(),
-            evolution_api_instance_id: nomeInstancia.trim(),
-            updated_at: new Date().toISOString(),
-          })
+          .update(updatePayload)
           .eq('id', existingInstance.id)
           .select()
           .single();
@@ -141,18 +156,25 @@ export async function POST(request: NextRequest) {
         }
 
         instanciaData = data;
+        const tf = formatarTelefone(telefone.trim());
+        await supabaseAdmin.from('usuarios').update({
+          telefone_ia: tf,
+          updated_at: new Date().toISOString(),
+        }).eq('id', clienteId);
       } else {
         // Criar nova instância
+        const insertPayload: any = {
+          usuario_id: clienteId,
+          telefone: telefoneFormatado,
+          instance_name: nomeInstancia.trim(),
+          status: 'desconectado',
+          updated_at: new Date().toISOString(),
+        };
+        if (z_api_instance_id) insertPayload.z_api_instance_id = z_api_instance_id;
+        if (z_api_token) insertPayload.z_api_token = z_api_token;
         const { data, error: createError } = await supabaseAdmin
           .from('whatsapp_instances')
-          .insert({
-            usuario_id: clienteId,
-            telefone: telefone,
-            instance_name: nomeInstancia.trim(),
-            evolution_api_instance_id: nomeInstancia.trim(),
-            status: 'desconectado',
-            updated_at: new Date().toISOString(),
-          })
+          .insert(insertPayload)
           .select()
           .single();
 
@@ -165,6 +187,11 @@ export async function POST(request: NextRequest) {
         }
 
         instanciaData = data;
+        const tf = formatarTelefone(telefone.trim());
+        await supabaseAdmin.from('usuarios').update({
+          telefone_ia: tf,
+          updated_at: new Date().toISOString(),
+        }).eq('id', clienteId);
       }
     } else {
       return NextResponse.json(

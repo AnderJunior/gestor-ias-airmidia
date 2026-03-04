@@ -115,7 +115,6 @@ export async function getUsuarioByTelefone(telefone: string): Promise<string | n
 export async function upsertWhatsAppInstance(
   telefone: string,
   instanceName?: string,
-  evolutionApiInstanceId?: string,
   status: StatusWhatsAppInstance = 'desconectado',
   userId?: string
 ): Promise<WhatsAppInstance> {
@@ -125,7 +124,6 @@ export async function upsertWhatsAppInstance(
   const updateData: any = {
     telefone,
     instance_name: instanceName,
-    evolution_api_instance_id: evolutionApiInstanceId,
     status,
     updated_at: new Date().toISOString(),
   };
@@ -416,6 +414,62 @@ export async function sincronizarStatusInstancia(
     clearInstancesCache(data.usuario_id);
   }
 
+  return data;
+}
+
+/**
+ * Busca uma instância WhatsApp pelo z_api_instance_id
+ */
+export async function getWhatsAppInstanceByZApiId(zApiInstanceId: string): Promise<WhatsAppInstance | null> {
+  const { data, error } = await supabase
+    .from('whatsapp_instances')
+    .select('*')
+    .eq('z_api_instance_id', zApiInstanceId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error fetching WhatsApp instance by z_api_instance_id:', error);
+    return null;
+  }
+  return data;
+}
+
+/**
+ * Sincroniza o status da instância no Supabase pelo z_api_instance_id (usado pelo webhook Z-API)
+ */
+export async function sincronizarStatusInstanciaPorZApiId(
+  zApiInstanceId: string,
+  status: StatusWhatsAppInstance
+): Promise<WhatsAppInstance | null> {
+  const instance = await getWhatsAppInstanceByZApiId(zApiInstanceId);
+  if (!instance) {
+    console.warn('Instância não encontrada para z_api_instance_id:', zApiInstanceId);
+    return null;
+  }
+
+  const updateData: Record<string, unknown> = {
+    status,
+    updated_at: new Date().toISOString(),
+  };
+  if (status === 'conectado') {
+    updateData.qr_code = null;
+  }
+
+  const { data, error } = await supabase
+    .from('whatsapp_instances')
+    .update(updateData)
+    .eq('z_api_instance_id', zApiInstanceId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error syncing instance status by z_api_instance_id:', error);
+    return null;
+  }
+
+  if (data?.usuario_id) {
+    clearInstancesCache(data.usuario_id);
+  }
   return data;
 }
 

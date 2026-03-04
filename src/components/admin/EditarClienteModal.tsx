@@ -20,13 +20,33 @@ export function EditarClienteModal({
   onSuccess,
 }: EditarClienteModalProps) {
   const [email, setEmail] = useState('');
+  const [telefone, setTelefone] = useState('');
+  const [telefoneFormatado, setTelefoneFormatado] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const formatarTelefone = (valor: string) => {
+    let numeros = valor.replace(/\D/g, '');
+    if (numeros.startsWith('55')) numeros = numeros.substring(2);
+    const limitados = numeros.slice(0, 11);
+    if (limitados.length === 0) return '';
+    const ddd = limitados.slice(0, 2);
+    const primeira = limitados.slice(2, 7);
+    const segunda = limitados.slice(7, 11);
+    if (limitados.length <= 2) return `+55 (${ddd}`;
+    if (limitados.length <= 7) return `+55 (${ddd}) ${primeira}`;
+    return `+55 (${ddd}) ${primeira}-${segunda}`;
+  };
+  const removerFormatacao = (valor: string) => {
+    const n = valor.replace(/\D/g, '');
+    return n.startsWith('55') ? n.slice(0, 13) : `55${n.slice(0, 11)}`;
+  };
+
   useEffect(() => {
     if (cliente) {
-      // Buscar email do cliente
       loadClienteEmail();
+      setTelefone(cliente.telefone_ia || '');
+      setTelefoneFormatado(cliente.telefone_ia ? formatarTelefone(cliente.telefone_ia) : '');
       setError('');
     }
   }, [cliente, isOpen]);
@@ -60,18 +80,17 @@ export function EditarClienteModal({
     e.preventDefault();
     setError('');
 
-    if (!email.trim()) {
-      setError('O e-mail é obrigatório');
+    if (!email?.trim() && !telefone?.trim()) {
+      setError('Informe e-mail e/ou telefone');
       return;
     }
-
-    // Validação básica de email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      setError('E-mail inválido');
-      return;
+    if (email?.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        setError('E-mail inválido');
+        return;
+      }
     }
-
     if (!cliente) {
       setError('Cliente não encontrado');
       return;
@@ -92,7 +111,8 @@ export function EditarClienteModal({
         },
         body: JSON.stringify({
           clienteId: cliente.id,
-          email: email.trim(),
+          email: email?.trim() || undefined,
+          telefone_ia: telefone?.trim() ? removerFormatacao(telefone) : undefined,
         }),
       });
 
@@ -105,6 +125,8 @@ export function EditarClienteModal({
       onSuccess();
       onClose();
       setEmail('');
+      setTelefone('');
+      setTelefoneFormatado('');
     } catch (err: any) {
       setError(err.message || 'Erro ao atualizar e-mail do cliente. Tente novamente.');
     } finally {
@@ -115,6 +137,8 @@ export function EditarClienteModal({
   const handleClose = () => {
     if (!loading) {
       setEmail('');
+      setTelefone('');
+      setTelefoneFormatado('');
       setError('');
       onClose();
     }
@@ -141,9 +165,23 @@ export function EditarClienteModal({
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            required
             disabled={loading}
             placeholder="Digite o novo e-mail"
+          />
+
+          <Input
+            label="Telefone IA"
+            type="tel"
+            value={telefoneFormatado}
+            onChange={(e) => {
+              const v = e.target.value;
+              const formatado = formatarTelefone(v);
+              const raw = removerFormatacao(v);
+              setTelefoneFormatado(formatado);
+              setTelefone(raw);
+            }}
+            disabled={loading}
+            placeholder="+55 (11) 99999-9999"
           />
 
           <div className="flex justify-end gap-3 pt-4">

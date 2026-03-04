@@ -6,12 +6,14 @@ interface ConnectionNotificationProps {
   isVisible: boolean;
   onClose: () => void;
   onConnectClick: () => void;
+  mensagemZApiNaoConfigurado?: boolean;
 }
 
 export function ConnectionNotification({
   isVisible,
   onClose,
   onConnectClick,
+  mensagemZApiNaoConfigurado = false,
 }: ConnectionNotificationProps) {
   const [shouldRender, setShouldRender] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -59,10 +61,12 @@ export function ConnectionNotification({
           </div>
           <div className="ml-3 flex-1">
             <h3 className="text-sm font-medium text-yellow-800">
-              WhatsApp não conectado
+              {mensagemZApiNaoConfigurado ? 'Instância Z-API não configurada' : 'WhatsApp não conectado'}
             </h3>
             <p className="mt-1 text-sm text-yellow-700">
-              Seu telefone não está conectado à Evolution API. Conecte agora para continuar usando o sistema.
+              {mensagemZApiNaoConfigurado
+                ? 'Configure a instância Z-API nas configurações ou peça ao administrador para editar o cliente.'
+                : 'Seu telefone não está conectado. Conecte agora para continuar usando o sistema.'}
             </p>
             <div className="mt-3 flex gap-2">
               <button

@@ -162,4 +162,3 @@ export function useEstatisticasAtendimentosMensagens(usuarioId?: string | null) 
 
   return { estatisticas, loading, error, refetch };
 }
-

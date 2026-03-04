@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { processEvolutionWebhookMessage, processEvolutionConnectionStatus } from '@/lib/api/evolution';
 
 /**
- * Webhook endpoint para receber eventos da Evolution API
+ * @deprecated Migração para Z-API. Use /api/webhooks/z-api para novas instâncias.
+ * Webhook endpoint para receber eventos da Evolution API (compatibilidade).
  * POST /api/webhooks/evolution
  */
 export async function POST(request: NextRequest) {
