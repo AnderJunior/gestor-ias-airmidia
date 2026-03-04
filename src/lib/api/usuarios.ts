@@ -340,9 +340,7 @@ export async function getDiasNaEtapaAtualPorClientes(
   }
 
   const agora = Date.now();
-  const diasPorCliente: Record<string, number> = {};
-
-  // Para cada cliente, usa o primeiro registro (mais recente) onde fase_id = fase atual
+  const diasPorCliente: Record<string, number> = {};  // Para cada cliente, usa o primeiro registro (mais recente) onde fase_id = fase atual
   const jaPreenchidos = new Set<string>();
   (data || []).forEach((reg) => {
     if (jaPreenchidos.has(reg.usuario_id)) return;

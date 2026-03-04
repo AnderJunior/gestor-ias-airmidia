@@ -158,7 +158,5 @@ export function useEstatisticasAtendimentosMensagens(usuarioId?: string | null) 
     } finally {
       setLoading(false);
     }
-  };
-
-  return { estatisticas, loading, error, refetch };
+  };  return { estatisticas, loading, error, refetch };
 }

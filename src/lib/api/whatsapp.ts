@@ -472,4 +472,3 @@ export async function sincronizarStatusInstanciaPorZApiId(
   }
   return data;
 }
-
