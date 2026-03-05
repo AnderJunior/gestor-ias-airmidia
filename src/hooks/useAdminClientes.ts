@@ -145,9 +145,7 @@ export function useEstatisticasAtendimentosMensagens(usuarioId?: string | null) 
       }
     }
     load();
-  }, [usuarioId]);
-
-  const refetch = async () => {
+  }, [usuarioId]);  const refetch = async () => {
     try {
       setLoading(true);
       const data = await getEstatisticasAtendimentosMensagens(false, usuarioId);
