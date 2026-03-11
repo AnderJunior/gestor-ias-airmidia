@@ -8,6 +8,11 @@ import { useNotifications } from '@/contexts/NotificationsContext';
 import { NotificationsModal } from '@/components/notifications/NotificationsModal';
 import { useAuth } from '@/hooks/useAuth';
 import { getAtendimentosRecentes, clearAtendimentosRecentesCache } from '@/lib/api/atendimentos';
+import { useUsuario } from '@/hooks/useUsuario';
+import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
+import { supabase } from '@/lib/supabaseClient';
+import { Power } from 'lucide-react';
 
 const pageTitles: Record<string, string> = {
   [ROUTES.DASHBOARD]: 'Dashboard',
@@ -29,8 +34,12 @@ export function Topbar() {
     : (pageTitles[pathname] || 'Dashboard');
   const { unreadCount } = useNotifications();
   const { user } = useAuth();
+  const { usuario, refetch: refetchUsuario } = useUsuario();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [unreadAtendimentosCount, setUnreadAtendimentosCount] = useState(0);
+  const [isIaToggleModalOpen, setIsIaToggleModalOpen] = useState(false);
+  const [isTogglingIa, setIsTogglingIa] = useState(false);
+  const [nextIaStatus, setNextIaStatus] = useState<'on' | 'off'>('off');
 
   // Carregar IDs de atendimentos lidos do localStorage
   const loadReadAtendimentosIds = (): Set<string> => {
@@ -90,6 +99,66 @@ export function Topbar() {
   // Calcular total de notificações não lidas
   const totalUnreadCount = unreadCount + unreadAtendimentosCount;
 
+  const iaAtiva = (() => {
+    const iaConfig = usuario?.ia_config as any;
+    if (!iaConfig || typeof iaConfig !== 'object') return true;
+    // Valor padrão é ligada quando campo não existe
+    return iaConfig.enabled !== false;
+  })();
+
+  const abrirModalToggleIa = () => {
+    setNextIaStatus(iaAtiva ? 'off' : 'on');
+    setIsIaToggleModalOpen(true);
+  };
+
+  const handleConfirmarToggleIa = async () => {
+    if (!user?.id) return;
+
+    setIsTogglingIa(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Sessão expirada. Faça login novamente.');
+        return;
+      }
+
+      const iaConfigAtual = (usuario?.ia_config as any) || {};
+
+      const payload = {
+        modo:
+          iaConfigAtual.modo === 'fora_horario_comercial'
+            ? 'fora_horario_comercial'
+            : 'horario_comercial',
+        horarios: iaConfigAtual.horarios && typeof iaConfigAtual.horarios === 'object'
+          ? iaConfigAtual.horarios
+          : {},
+        enabled: nextIaStatus === 'on',
+      };
+
+      const res = await fetch('/api/usuarios/ia-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao atualizar configurações da IA');
+      }
+
+      await refetchUsuario();
+      setIsIaToggleModalOpen(false);
+    } catch (error) {
+      console.error('Erro ao alternar IA:', error);
+      alert(error instanceof Error ? error.message : 'Erro ao atualizar configuração da IA. Tente novamente.');
+    } finally {
+      setIsTogglingIa(false);
+    }
+  };
+
   return (
     <>
       <header className="bg-white border-b border-gray-100 px-8 py-5 shadow-sm">
@@ -113,22 +182,70 @@ export function Topbar() {
                 </span>
               )}
             </button>
-          
-          {/* Barra de busca */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Buscar..."
-              className="pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent w-64"
-            />
-            <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+
+            {/* Barra de busca */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Buscar..."
+                className="pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent w-64"
+              />
+              <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+
+            {/* Ícone de Power (IA On/Off) */}
+            <button
+              onClick={abrirModalToggleIa}
+              className={`relative p-2 rounded-lg transition-colors ${
+                iaAtiva
+                  ? 'bg-green-500 text-white hover:bg-green-600'
+                  : 'bg-red-500 text-white hover:bg-red-600'
+              }`}
+              title={iaAtiva ? 'Desligar IA' : 'Ligar IA'}
+            >
+              <Power className="w-5 h-5" />
+            </button>
           </div>
-        </div>
       </div>
     </header>
     <NotificationsModal isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
+    <Modal
+      isOpen={isIaToggleModalOpen}
+      onClose={() => !isTogglingIa && setIsIaToggleModalOpen(false)}
+      title={nextIaStatus === 'on' ? 'Ligar IA' : 'Desligar IA'}
+      closeOnClickOutside={!isTogglingIa}
+    >
+      <div className="space-y-4">
+        <p className="text-gray-700">
+          {nextIaStatus === 'on'
+            ? 'Deseja ligar a IA para este usuário?'
+            : 'Deseja desligar a IA para este usuário?'}
+        </p>
+        <div className="flex justify-end gap-3 pt-2">
+          <Button
+            variant="secondary"
+            onClick={() => setIsIaToggleModalOpen(false)}
+            disabled={isTogglingIa}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleConfirmarToggleIa}
+            disabled={isTogglingIa}
+          >
+            {isTogglingIa
+              ? nextIaStatus === 'on'
+                ? 'Ligando...'
+                : 'Desligando...'
+              : nextIaStatus === 'on'
+                ? 'Ligar IA'
+                : 'Desligar IA'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
     </>
   );
 }

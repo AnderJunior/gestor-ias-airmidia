@@ -31,6 +31,15 @@ export default function ConfiguracoesPage() {
   const [apiEnvioMensagens, setApiEnvioMensagens] = useState<ApiEnvioMensagens>('twilio');
   const [loadingApiEnvio, setLoadingApiEnvio] = useState(false);
 
+  const isCliente = usuario?.tipo === 'cliente';
+
+  // Garantir que clientes permaneçam sempre na aba de perfil
+  useEffect(() => {
+    if (isCliente && abaAtiva !== 'perfil') {
+      setAbaAtiva('perfil');
+    }
+  }, [isCliente, abaAtiva]);
+
   // Inicializar nome e api_envio quando usuario carregar
   useEffect(() => {
     if (usuario?.nome) {
@@ -272,6 +281,161 @@ export default function ConfiguracoesPage() {
     }
   };
 
+  const DIAS_SEMANA: { id: 'segunda' | 'terca' | 'quarta' | 'quinta' | 'sexta' | 'sabado' | 'domingo'; label: string }[] = [
+    { id: 'segunda', label: 'Segunda-feira' },
+    { id: 'terca', label: 'Terça-feira' },
+    { id: 'quarta', label: 'Quarta-feira' },
+    { id: 'quinta', label: 'Quinta-feira' },
+    { id: 'sexta', label: 'Sexta-feira' },
+    { id: 'sabado', label: 'Sábado' },
+    { id: 'domingo', label: 'Domingo' },
+  ];
+
+  type ModoAtendimentoIA = 'horario_comercial' | 'fora_horario_comercial';
+
+  type HorarioDiaIA = {
+    inicio: string;
+    fim: string;
+  };
+
+  const [modoAtendimentoIA, setModoAtendimentoIA] = useState<ModoAtendimentoIA>('horario_comercial');
+  const [horariosIA, setHorariosIA] = useState<Record<string, HorarioDiaIA | null>>(() =>
+    DIAS_SEMANA.reduce((acc, dia) => {
+      acc[dia.id] = { inicio: '', fim: '' };
+      return acc;
+    }, {} as Record<string, HorarioDiaIA | null>)
+  );
+  const [salvandoConfigIA, setSalvandoConfigIA] = useState(false);
+  const [mostrarModalSucessoIA, setMostrarModalSucessoIA] = useState(false);
+
+  // Inicializar configurações da IA quando usuario carregar
+  useEffect(() => {
+    if (usuario?.ia_config) {
+      const { modo, horarios } = usuario.ia_config as any;
+      if (modo === 'horario_comercial' || modo === 'fora_horario_comercial') {
+        setModoAtendimentoIA(modo);
+      }
+
+      if (horarios && typeof horarios === 'object') {
+        setHorariosIA((prev) => {
+          const novo: Record<string, HorarioDiaIA | null> = { ...prev };
+          DIAS_SEMANA.forEach((dia) => {
+            const valor = (horarios as any)[dia.id];
+            if (valor && typeof valor === 'object' && valor.inicio && valor.fim) {
+              novo[dia.id] = { inicio: valor.inicio, fim: valor.fim };
+            } else {
+              novo[dia.id] = null;
+            }
+          });
+          return novo;
+        });
+      }
+    }
+  }, [usuario?.ia_config]);
+
+  const handleChangeHorarioIA = (diaId: string, campo: 'inicio' | 'fim', valor: string) => {
+    setHorariosIA((prev) => {
+      if (prev[diaId] === null) {
+        return prev;
+      }
+      const atual = prev[diaId] ?? { inicio: '', fim: '' };
+      return {
+        ...prev,
+        [diaId]: {
+          ...atual,
+          [campo]: valor,
+        },
+      };
+    });
+  };
+
+  const toggleDiaFechadoIA = (diaId: string) => {
+    setHorariosIA((prev) => {
+      const atual = prev[diaId];
+      const fechado = atual === null;
+
+      if (fechado) {
+        return {
+          ...prev,
+          [diaId]: { inicio: '', fim: '' },
+        };
+      }
+
+      return {
+        ...prev,
+        [diaId]: null,
+      };
+    });
+  };
+
+  const validarHorariosIA = () => {
+    const regexHora = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+    for (const dia of DIAS_SEMANA) {
+      const horario = horariosIA[dia.id];
+      if (!horario) {
+        // Dia marcado como fechado - não é obrigatório informar horário
+        continue;
+      }
+      if (!horario.inicio || !horario.fim) {
+        alert('Preencha horário de início e fim para todos os dias que estiverem abertos.');
+        return false;
+      }
+      if (!regexHora.test(horario.inicio) || !regexHora.test(horario.fim)) {
+        alert('Use o formato HH:MM (24h) para os horários.');
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const handleSalvarConfigIA = async () => {
+    if (!validarHorariosIA()) return;
+
+    setSalvandoConfigIA(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Sessão expirada. Faça login novamente.');
+        return;
+      }
+
+      const iaConfigAtual = usuario?.ia_config as any;
+
+      const payload = {
+        modo: modoAtendimentoIA,
+        horarios: horariosIA,
+        // Preserva o estado de ligado/desligado da IA salvo pelo topo
+        enabled: iaConfigAtual && typeof iaConfigAtual === 'object'
+          ? iaConfigAtual.enabled !== false
+          : true,
+      };
+
+      const res = await fetch('/api/usuarios/ia-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao salvar configurações da IA');
+      }
+
+      await refetch();
+      setMostrarModalSucessoIA(true);
+    } catch (error) {
+      console.error('Erro ao salvar configurações da IA:', error);
+      alert(error instanceof Error ? error.message : 'Erro ao salvar configurações da IA. Tente novamente.');
+    } finally {
+      setSalvandoConfigIA(false);
+    }
+  };
+
   return (
     <div className="w-full space-y-6">
       {/* Abas */}
@@ -286,26 +450,30 @@ export default function ConfiguracoesPage() {
         >
           Perfil
         </button>
-        <button
-          onClick={() => setAbaAtiva('webhook')}
-          className={`flex-1 px-4 py-2 transition-all rounded-md text-center ${
-            abaAtiva === 'webhook'
-              ? 'bg-white text-gray-900 font-semibold shadow-sm'
-              : 'bg-transparent text-gray-600 font-normal'
-          }`}
-        >
-          Webhook
-        </button>
-        <button
-          onClick={() => setAbaAtiva('administradores')}
-          className={`flex-1 px-4 py-2 transition-all rounded-md text-center ${
-            abaAtiva === 'administradores'
-              ? 'bg-white text-gray-900 font-semibold shadow-sm'
-              : 'bg-transparent text-gray-600 font-normal'
-          }`}
-        >
-          Administradores
-        </button>
+        {!isCliente && (
+          <>
+            <button
+              onClick={() => setAbaAtiva('webhook')}
+              className={`flex-1 px-4 py-2 transition-all rounded-md text-center ${
+                abaAtiva === 'webhook'
+                  ? 'bg-white text-gray-900 font-semibold shadow-sm'
+                  : 'bg-transparent text-gray-600 font-normal'
+              }`}
+            >
+              Webhook
+            </button>
+            <button
+              onClick={() => setAbaAtiva('administradores')}
+              className={`flex-1 px-4 py-2 transition-all rounded-md text-center ${
+                abaAtiva === 'administradores'
+                  ? 'bg-white text-gray-900 font-semibold shadow-sm'
+                  : 'bg-transparent text-gray-600 font-normal'
+              }`}
+            >
+              Administradores
+            </button>
+          </>
+        )}
       </div>
 
       {/* Conteúdo da aba Perfil */}
@@ -382,6 +550,131 @@ export default function ConfiguracoesPage() {
         </div>
       </Card>
 
+      {/* Configurações da IA */}
+      <Card title="Configurações da IA" className="w-full">
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-900">Modo de atendimento</p>
+            <p className="text-xs text-gray-500">
+              Defina se a IA deve responder durante o horário comercial ou apenas fora dele.
+            </p>
+            <div className="inline-flex items-center bg-gray-100 rounded-lg p-1">
+              <button
+                type="button"
+                onClick={() => setModoAtendimentoIA('horario_comercial')}
+                className={`flex-1 px-4 py-2 text-sm rounded-md text-center whitespace-nowrap transition-all ${
+                  modoAtendimentoIA === 'horario_comercial'
+                    ? 'bg-white text-gray-900 font-semibold shadow-sm'
+                    : 'bg-transparent text-gray-600 font-normal'
+                }`}
+              >
+                Horário comercial
+              </button>
+              <button
+                type="button"
+                onClick={() => setModoAtendimentoIA('fora_horario_comercial')}
+                className={`flex-1 px-4 py-2 text-sm rounded-md text-center whitespace-nowrap transition-all ${
+                  modoAtendimentoIA === 'fora_horario_comercial'
+                    ? 'bg-white text-gray-900 font-semibold shadow-sm'
+                    : 'bg-transparent text-gray-600 font-normal'
+                }`}
+              >
+                Fora do horário comercial
+              </button>
+            </div>
+            <p className="text-xs text-gray-500">
+              {modoAtendimentoIA === 'horario_comercial'
+                ? 'Preencha abaixo o horário comercial em que a IA deve atender automaticamente.'
+                : 'Preencha abaixo o seu horário comercial. A IA atenderá automaticamente nos horários contrários.'}
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-gray-900">Informe o horario comercial que você trabalha</p>
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="grid grid-cols-3 gap-4 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-700">
+                <span>Dia</span>
+                <span>Início</span>
+                <span>Fim</span>
+              </div>
+              <div className="divide-y divide-gray-200">
+                {DIAS_SEMANA.map((dia) => {
+                  const fechado = horariosIA[dia.id] === null;
+                  const horario = horariosIA[dia.id] ?? { inicio: '', fim: '' };
+                  return (
+                    <div key={dia.id} className="grid grid-cols-3 gap-4 px-4 py-2 items-center text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-gray-800">{dia.label}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleDiaFechadoIA(dia.id)}
+                          className="flex items-center gap-2 text-xs text-gray-500"
+                        >
+                          <span>{fechado ? 'Fechado' : 'Aberto'}</span>
+                          <span
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-colors ${
+                              fechado ? 'bg-gray-300 border-gray-400' : 'bg-green-500 border-green-500'
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                                fechado ? 'translate-x-1' : 'translate-x-4'
+                              }`}
+                            />
+                          </span>
+                        </button>
+                      </div>
+                      <input
+                        type="time"
+                        value={horario.inicio}
+                        onChange={(e) => handleChangeHorarioIA(dia.id, 'inicio', e.target.value)}
+                        disabled={fechado}
+                        className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                      />
+                      <input
+                        type="time"
+                        value={horario.fim}
+                        onChange={(e) => handleChangeHorarioIA(dia.id, 'fim', e.target.value)}
+                        disabled={fechado}
+                        className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={handleSalvarConfigIA}
+              disabled={salvandoConfigIA}
+            >
+              {salvandoConfigIA ? 'Salvando...' : 'Salvar configurações da IA'}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Modal de sucesso configurações da IA */}
+      <Modal
+        isOpen={mostrarModalSucessoIA}
+        onClose={() => setMostrarModalSucessoIA(false)}
+        title="Configurações salvas"
+        closeOnClickOutside
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Configurações da IA salvas com sucesso.
+          </p>
+          <div className="flex justify-end">
+            <Button onClick={() => setMostrarModalSucessoIA(false)}>
+              OK
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Integrações */}
       <Card title="Integrações" className="w-full">
         <div className="space-y-6">
@@ -407,7 +700,7 @@ export default function ConfiguracoesPage() {
                 {loadingStatus ? (
                   <p className="text-xs text-gray-500">Verificando...</p>
                 ) : (
-                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-8">
                     {whatsappStatus === 'conectado' && zApiConfigurado && (
                       <button
                         onClick={() => setMostrarModalDesconectar(true)}
@@ -449,40 +742,42 @@ export default function ConfiguracoesPage() {
           {/* Divisor */}
           <div className="border-t border-gray-200"></div>
 
-          {/* API de envio de mensagens */}
-          <div className="space-y-4">
-            <p className="text-sm font-medium text-gray-900">API para envio de mensagens</p>
-            <p className="text-xs text-gray-500">
-              Escolha qual API será usada ao enviar mensagens WhatsApp nos atendimentos.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => handleAlterarApiEnvio('z_api')}
-                disabled={loadingApiEnvio}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all ${
-                  apiEnvioMensagens === 'z_api'
-                    ? 'border-primary-600 bg-primary-50 text-primary-700'
-                    : 'border-gray-200 hover:border-gray-300 bg-white text-gray-600'
-                } disabled:opacity-50`}
-              >
-                <span className="font-medium">API AIR Mídia (Z-API)</span>
-              </button>
-              <button
-                onClick={() => handleAlterarApiEnvio('twilio')}
-                disabled={loadingApiEnvio}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all ${
-                  apiEnvioMensagens === 'twilio'
-                    ? 'border-primary-600 bg-primary-50 text-primary-700'
-                    : 'border-gray-200 hover:border-gray-300 bg-white text-gray-600'
-                } disabled:opacity-50`}
-              >
-                <span className="font-medium">API Oficial (Twilio)</span>
-              </button>
+          {/* API de envio de mensagens - visível apenas para usuários que não são clientes */}
+          {!isCliente && (
+            <div className="space-y-4">
+              <p className="text-sm font-medium text-gray-900">API para envio de mensagens</p>
+              <p className="text-xs text-gray-500">
+                Escolha qual API será usada ao enviar mensagens WhatsApp nos atendimentos.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleAlterarApiEnvio('z_api')}
+                  disabled={loadingApiEnvio}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all ${
+                    apiEnvioMensagens === 'z_api'
+                      ? 'border-primary-600 bg-primary-50 text-primary-700'
+                      : 'border-gray-200 hover:border-gray-300 bg-white text-gray-600'
+                  } disabled:opacity-50`}
+                >
+                  <span className="font-medium">API AIR Mídia (Z-API)</span>
+                </button>
+                <button
+                  onClick={() => handleAlterarApiEnvio('twilio')}
+                  disabled={loadingApiEnvio}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all ${
+                    apiEnvioMensagens === 'twilio'
+                      ? 'border-primary-600 bg-primary-50 text-primary-700'
+                      : 'border-gray-200 hover:border-gray-300 bg-white text-gray-600'
+                  } disabled:opacity-50`}
+                >
+                  <span className="font-medium">API Oficial (Twilio)</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Divisor */}
-          <div className="border-t border-gray-200"></div>
+          {/* Divisor (apenas quando a seção de API é exibida, para evitar linhas duplicadas) */}
+          {!isCliente && <div className="border-t border-gray-200"></div>}
 
           {/* Conexão Google Calendar */}
           <div className="space-y-4">
@@ -514,12 +809,12 @@ export default function ConfiguracoesPage() {
       )}
 
       {/* Conteúdo da aba Webhook */}
-      {abaAtiva === 'webhook' && (
+      {!isCliente && abaAtiva === 'webhook' && (
         <WebhooksConfigSection />
       )}
 
       {/* Conteúdo da aba Administradores */}
-      {abaAtiva === 'administradores' && (
+      {!isCliente && abaAtiva === 'administradores' && (
         <AdministradoresConfigSection />
       )}
 

@@ -13,8 +13,33 @@ export interface Usuario {
   ativo?: boolean;
   admin_responsavel?: string | null;
   api_envio_mensagens?: ApiEnvioMensagens | null;
+  ia_config?: IaConfig | null;
   created_at: string;
   updated_at: string;
+}
+
+export type DiaSemana =
+  | 'segunda'
+  | 'terca'
+  | 'quarta'
+  | 'quinta'
+  | 'sexta'
+  | 'sabado'
+  | 'domingo';
+
+export interface HorarioDia {
+  inicio: string;
+  fim: string;
+}
+
+export interface IaConfig {
+  modo: 'horario_comercial' | 'fora_horario_comercial';
+  horarios: Partial<Record<DiaSemana, HorarioDia | null>>;
+  /**
+   * Controla se a IA está ligada ou desligada para o usuário.
+   * Campo opcional para manter compatibilidade com registros antigos.
+   */
+  enabled?: boolean;
 }
 
 // Cache simples para evitar requisições duplicadas
